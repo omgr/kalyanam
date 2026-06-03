@@ -1,0 +1,21 @@
+{
+  "name": "Kalyanam - Wedding Planner",
+  "short_name": "Kalyanam",
+  "description": "Plan your perfect wedding with Kalyanam. Track events, manage budgets, coordinate with family, and celebrate your culture.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF8F0",
+  "theme_color": "#FF6F00",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["lifestyle", "productivity", "social"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
