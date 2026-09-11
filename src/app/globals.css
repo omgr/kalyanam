@@ -302,3 +302,72 @@
   font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
 }
 
+/* ============================================
+   PRINT
+   ============================================
+   The running order is handed to a priest, a caterer and a venue manager, none
+   of whom will install the app. What matters on paper is different from what
+   matters on screen: no navigation, no colour that wastes ink, and page breaks
+   that fall between ceremonies rather than through the middle of one.
+*/
+@media print {
+  /* Anything that only exists to be clicked has no business on paper. */
+  .no-print,
+  nav,
+  aside,
+  header nav,
+  [role="navigation"] {
+    display: none !important;
+  }
+
+  :root {
+    /* Force a plain black-on-white sheet regardless of the viewer's theme. */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --muted-foreground: 0 0% 30%;
+    --border: 0 0% 60%;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+
+  .run-sheet {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Keep a day's ceremonies together, and never split one across pages. */
+  .day-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .event-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h2 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Repeat column headings when a long day runs onto a second page. */
+  thead {
+    display: table-header-group;
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  @page {
+    margin: 15mm;
+  }
+}

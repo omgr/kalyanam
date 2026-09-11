@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Save,
   Search,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,7 +144,12 @@ function EventsList({ weddingId }: { weddingId: string }) {
             <h1 className="text-3xl font-display font-bold">Events & Ceremonies</h1>
             <p className="text-muted-foreground">{events?.length || 0} events for {wedding?.name || "your wedding"}</p>
           </div>
-          <Button onClick={() => router.push("/events/new")}><Plus className="w-4 h-4 mr-2" />Add Event</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => router.push("/print")}>
+              <Printer className="w-4 h-4 mr-2" />Running order
+            </Button>
+            <Button onClick={() => router.push("/events/new")}><Plus className="w-4 h-4 mr-2" />Add Event</Button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4">
