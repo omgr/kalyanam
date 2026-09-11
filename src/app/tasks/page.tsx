@@ -23,6 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useTasks, useWedding, useFamilyMembers } from "@/lib/db/hooks";
 import { db, Task } from "@/lib/db/schema";
+import { resolveUserId } from "@/lib/session";
+import { toast } from "@/hooks/use-toast";
 import { generateId, formatDate } from "@/lib/utils";
 
 export default function TasksPage() {
@@ -43,13 +45,13 @@ export default function TasksPage() {
 
   useEffect(() => {
     const storedWeddingId = localStorage.getItem("kalyanam_wedding_id");
-    const storedUserId = localStorage.getItem("kalyanam_user_id");
     if (!storedWeddingId) {
       router.push("/onboarding");
       return;
     }
     setWeddingId(storedWeddingId);
-    setUserId(storedUserId);
+    // Derive and persist a user id if this device arrived via import or sync.
+    resolveUserId(storedWeddingId).then(setUserId);
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
@@ -68,21 +70,33 @@ export default function TasksPage() {
   });
 
   const handleAddTask = async () => {
-    if (!weddingId || !userId || !newTask.title) return;
+    if (!weddingId || !newTask.title) return;
 
-    await db.tasks.add({
-      id: generateId(),
-      weddingId,
-      title: newTask.title,
-      description: newTask.description || undefined,
-      priority: newTask.priority,
-      status: "pending",
-      dueDate: newTask.dueDate ? new Date(newTask.dueDate) : undefined,
-      assignedTo: newTask.assignedTo.length > 0 ? newTask.assignedTo : undefined,
-      createdBy: userId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    try {
+      const createdBy = userId ?? (await resolveUserId(weddingId));
+
+      await db.tasks.add({
+        id: generateId(),
+        weddingId,
+        title: newTask.title,
+        description: newTask.description || undefined,
+        priority: newTask.priority,
+        status: "pending",
+        dueDate: newTask.dueDate ? new Date(newTask.dueDate) : undefined,
+        assignedTo: newTask.assignedTo.length > 0 ? newTask.assignedTo : undefined,
+        createdBy,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error adding task:", error);
+      toast({
+        variant: "destructive",
+        title: "Could not add task",
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      return;
+    }
 
     setNewTask({
       title: "",

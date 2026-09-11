@@ -86,8 +86,16 @@ export function useEvents(weddingId: string | undefined) {
   );
 }
 
+/**
+ * Returns `undefined` while the query is still running and `null` when the
+ * event genuinely does not exist, so callers can tell a slow load apart from a
+ * missing record instead of flashing "not found" on every navigation.
+ */
 export function useEvent(id: string | undefined) {
-  return useLiveQuery(() => (id ? db.events.get(id) : undefined), [id]);
+  return useLiveQuery(
+    async () => (id ? (await db.events.get(id)) ?? null : null),
+    [id]
+  );
 }
 
 export function useEventsByCategory(

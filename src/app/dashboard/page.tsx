@@ -295,7 +295,7 @@ export default function DashboardPage() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       className="p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
-                      onClick={() => router.push(`/events/${event.id}`)}
+                      onClick={() => router.push(`/events?id=${event.id}`)}
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-center min-w-[50px]">

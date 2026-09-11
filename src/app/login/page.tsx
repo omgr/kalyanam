@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { db, Wedding } from "@/lib/db/schema";
+import { activateWedding, clearSession } from "@/lib/session";
 import { formatDate, getDaysUntil } from "@/lib/utils";
 import {
   importWeddingData,
@@ -79,7 +80,7 @@ export default function LoginPage() {
     if (primaryMember?.userId) {
       localStorage.setItem("kalyanam_user_id", primaryMember.userId);
     }
-    localStorage.setItem("kalyanam_wedding_id", wedding.id);
+    await activateWedding(wedding.id);
     
     router.push("/dashboard");
   };
@@ -115,8 +116,7 @@ export default function LoginPage() {
       );
       
       if (localStorage.getItem("kalyanam_wedding_id") === weddingId) {
-        localStorage.removeItem("kalyanam_wedding_id");
-        localStorage.removeItem("kalyanam_user_id");
+        clearSession();
       }
       
       loadWeddings();
@@ -157,7 +157,7 @@ export default function LoginPage() {
                 setSyncComplete(true);
                 
                 if (result.weddingId) {
-                  localStorage.setItem("kalyanam_wedding_id", result.weddingId);
+                  await activateWedding(result.weddingId);
                 }
                 
                 // Reload weddings list
@@ -192,8 +192,19 @@ export default function LoginPage() {
     
     try {
       const content = await readFile(file);
-      const result = await importWeddingData(content, { mode: 'new' });
-      
+      let result = await importWeddingData(content, { mode: 'new' });
+
+      // The wedding is already here - importing again would duplicate it, so
+      // confirm an overwrite instead.
+      if (!result.success && result.alreadyExists) {
+        if (confirm(`${result.error}\n\nReplace the copy on this device with this backup?`)) {
+          result = await importWeddingData(content, { mode: 'new', replaceExisting: true });
+        } else {
+          setImportResult({ success: false, message: 'Import cancelled - existing data kept.' });
+          return;
+        }
+      }
+
       if (result.success) {
         setImportResult({
           success: true,
@@ -201,7 +212,7 @@ export default function LoginPage() {
         });
         
         if (result.weddingId) {
-          localStorage.setItem("kalyanam_wedding_id", result.weddingId);
+          await activateWedding(result.weddingId);
         }
         
         loadWeddings();

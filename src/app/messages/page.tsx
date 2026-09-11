@@ -22,6 +22,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useMessages, useWedding, useFamilyMembers } from "@/lib/db/hooks";
 import { db, Message } from "@/lib/db/schema";
+import { resolveUserId } from "@/lib/session";
+import { toast } from "@/hooks/use-toast";
 import { generateId, formatDate } from "@/lib/utils";
 
 export default function MessagesPage() {
@@ -39,13 +41,13 @@ export default function MessagesPage() {
 
   useEffect(() => {
     const storedWeddingId = localStorage.getItem("kalyanam_wedding_id");
-    const storedUserId = localStorage.getItem("kalyanam_user_id");
     if (!storedWeddingId) {
       router.push("/onboarding");
       return;
     }
     setWeddingId(storedWeddingId);
-    setUserId(storedUserId);
+    // Derive and persist a user id if this device arrived via import or sync.
+    resolveUserId(storedWeddingId).then(setUserId);
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
@@ -53,14 +55,16 @@ export default function MessagesPage() {
   const familyMembers = useFamilyMembers(weddingId ?? undefined);
 
   const handleSendMessage = async () => {
-    if (!weddingId || !userId || !newMessage.content) return;
+    if (!weddingId || !newMessage.content) return;
 
-    const member = familyMembers?.find((m) => m.userId === userId);
+    const senderUserId = userId ?? (await resolveUserId(weddingId));
+    const member = familyMembers?.find((m) => m.userId === senderUserId);
 
-    await db.messages.add({
+    try {
+      await db.messages.add({
       id: generateId(),
       weddingId,
-      senderId: member?.id || userId,
+      senderId: member?.id || senderUserId,
       recipientIds: newMessage.recipientIds.length > 0 ? newMessage.recipientIds : undefined,
       subject: newMessage.subject || undefined,
       content: newMessage.content,
@@ -69,7 +73,16 @@ export default function MessagesPage() {
       isRead: false,
       readBy: [],
       createdAt: new Date(),
-    });
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast({
+        variant: "destructive",
+        title: "Could not send message",
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      return;
+    }
 
     setNewMessage({
       subject: "",

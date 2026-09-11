@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useFamilyMembers, useWedding, useVenues, useLocationPings } from "@/lib/db/hooks";
 import { db, FamilyMember, LocationData, LocationPing } from "@/lib/db/schema";
+import { resolveUserId } from "@/lib/session";
+import { toast } from "@/hooks/use-toast";
 import { generateId } from "@/lib/utils";
 
 export default function LocationPage() {
@@ -38,13 +40,13 @@ export default function LocationPage() {
 
   useEffect(() => {
     const storedWeddingId = localStorage.getItem("kalyanam_wedding_id");
-    const storedUserId = localStorage.getItem("kalyanam_user_id");
     if (!storedWeddingId) {
       router.push("/onboarding");
       return;
     }
     setWeddingId(storedWeddingId);
-    setUserId(storedUserId);
+    // Derive and persist a user id if this device arrived via import or sync.
+    resolveUserId(storedWeddingId).then(setUserId);
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
@@ -85,10 +87,23 @@ export default function LocationPage() {
 
   // Share location
   const shareLocation = async () => {
-    if (!weddingId || !userId || !currentLocation) return;
+    if (!weddingId || !currentLocation) return;
 
-    const member = familyMembers?.find((m) => m.userId === userId);
-    if (!member) return;
+    const activeUserId = userId ?? (await resolveUserId(weddingId));
+    // Fall back to the primary organiser if this device has no matching member
+    // record (e.g. the data arrived from another device via import or sync).
+    const member =
+      familyMembers?.find((m) => m.userId === activeUserId) ||
+      familyMembers?.find((m) => m.role === "primary") ||
+      familyMembers?.[0];
+    if (!member) {
+      toast({
+        variant: "destructive",
+        title: "No family member to share as",
+        description: "Add yourself under Family first, then share your location.",
+      });
+      return;
+    }
 
     setIsSharing(true);
 

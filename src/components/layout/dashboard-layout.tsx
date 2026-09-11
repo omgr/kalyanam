@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { clearSession } from "@/lib/session";
 import { useTheme } from "next-themes";
 
 interface DashboardLayoutProps {
@@ -53,8 +54,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
-    localStorage.removeItem("kalyanam_user_id");
-    localStorage.removeItem("kalyanam_wedding_id");
+    clearSession();
     router.push("/login");
   };
 

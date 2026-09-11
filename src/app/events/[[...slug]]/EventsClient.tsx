@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Calendar,
@@ -30,20 +30,49 @@ import { useEvents, useEvent, useFamilyMembers, useWedding } from "@/lib/db/hook
 import { db, WeddingEvent, ChecklistItem } from "@/lib/db/schema";
 import { formatDate, formatTime, generateId } from "@/lib/utils";
 
-// Parse the URL to determine what to show
-function parseRoute(pathname: string): { mode: 'list' | 'detail' | 'edit' | 'new'; eventId?: string } {
+type EventRoute = { mode: 'list' | 'detail' | 'edit' | 'new'; eventId?: string };
+
+/**
+ * Events are addressed by query string rather than by path segment.
+ *
+ * A static export can only ship HTML for paths known at build time, and event
+ * ids are created by the user at runtime — so `/events/<uuid>` had no page to
+ * serve and returned a hard 404 on GitHub Pages. Keeping the id in the query
+ * string means every view renders from the prerendered `/events` document,
+ * which also keeps it working offline in the installed PWA.
+ *
+ *   /events                      -> list
+ *   /events?id=<uuid>            -> detail
+ *   /events?id=<uuid>&edit=1     -> edit
+ *   /events/new  (or ?new=1)     -> create
+ */
+function parseRoute(pathname: string, params: URLSearchParams): EventRoute {
   const parts = pathname.split('/').filter(Boolean);
-  if (parts.length === 1) return { mode: 'list' };
-  if (parts[1] === 'new') return { mode: 'new' };
-  if (parts.length === 2) return { mode: 'detail', eventId: parts[1] };
-  if (parts.length === 3 && parts[2] === 'edit') return { mode: 'edit', eventId: parts[1] };
+
+  // /events/new is still prerendered, so old links and bookmarks keep working.
+  if (parts[1] === 'new' || params.get('new') === '1') return { mode: 'new' };
+
+  const eventId = params.get('id');
+  if (eventId) {
+    return { mode: params.get('edit') === '1' ? 'edit' : 'detail', eventId };
+  }
+
   return { mode: 'list' };
 }
+
+/** Canonical links for the views above. */
+export const eventHref = {
+  list: () => '/events',
+  detail: (id: string) => `/events?id=${encodeURIComponent(id)}`,
+  edit: (id: string) => `/events?id=${encodeURIComponent(id)}&edit=1`,
+  new: () => '/events/new',
+};
 
 export default function EventsClient() {
   const router = useRouter();
   const pathname = usePathname();
-  const { mode, eventId } = parseRoute(pathname);
+  const searchParams = useSearchParams();
+  const { mode, eventId } = parseRoute(pathname, searchParams);
   
   const [weddingId, setWeddingId] = useState<string | null>(null);
 
@@ -135,7 +164,7 @@ function EventsList({ weddingId }: { weddingId: string }) {
           <div className="space-y-4">
             {filteredEvents.map((event, index) => (
               <motion.div key={event.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
-                <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => router.push(`/events/${event.id}`)}>
+                <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => router.push(eventHref.detail(event.id))}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -228,7 +257,17 @@ function EventDetail({ weddingId, eventId }: { weddingId: string; eventId: strin
     }
   };
 
-  if (!event) {
+  if (event === undefined) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading event...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (event === null) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
@@ -261,7 +300,7 @@ function EventDetail({ weddingId, eventId }: { weddingId: string; eventId: strin
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push(`/events/${eventId}/edit`)}><Edit className="w-4 h-4 mr-2" />Edit</Button>
+            <Button variant="outline" onClick={() => router.push(eventHref.edit(eventId))}><Edit className="w-4 h-4 mr-2" />Edit</Button>
             <Button variant="destructive" onClick={handleDeleteEvent}><Trash2 className="w-4 h-4" /></Button>
           </div>
         </div>
@@ -391,11 +430,11 @@ function EventForm({ weddingId, eventId }: { weddingId: string; eventId?: string
       };
       if (eventId) {
         await db.events.update(eventId, eventData);
-        router.push(`/events/${eventId}`);
+        router.push(eventHref.detail(eventId));
       } else {
         const newId = generateId();
         await db.events.add({ ...eventData, id: newId, weddingId, status: "scheduled", createdAt: new Date() } as WeddingEvent);
-        router.push(`/events/${newId}`);
+        router.push(eventHref.detail(newId));
       }
     } catch (error) {
       console.error("Error saving event:", error);
@@ -409,7 +448,7 @@ function EventForm({ weddingId, eventId }: { weddingId: string; eventId?: string
     <DashboardLayout>
       <div className="max-w-3xl mx-auto space-y-6 pb-20 lg:pb-0">
         <div>
-          <Button variant="ghost" className="mb-2 -ml-2" onClick={() => eventId ? router.push(`/events/${eventId}`) : router.push("/events")}>
+          <Button variant="ghost" className="mb-2 -ml-2" onClick={() => eventId ? router.push(eventHref.detail(eventId)) : router.push("/events")}>
             <ArrowLeft className="w-4 h-4 mr-2" />{eventId ? "Back to Event" : "Back to Events"}
           </Button>
           <h1 className="text-3xl font-display font-bold">{eventId ? "Edit Event" : "New Event"}</h1>
@@ -443,7 +482,7 @@ function EventForm({ weddingId, eventId }: { weddingId: string; eventId?: string
             <div className="space-y-2"><Label>Checklist Items</Label><div className="space-y-2">{checklistItems.map((item, i) => (<div key={item.id} className="flex gap-2"><Input placeholder={`Item ${i + 1}`} value={item.text} onChange={(e) => updateChecklistItem(i, e.target.value)} /><Button type="button" variant="ghost" size="icon" onClick={() => removeChecklistItem(i)}><Trash2 className="w-4 h-4 text-red-500" /></Button></div>))}<Button type="button" variant="outline" onClick={addChecklistItem} className="w-full"><Plus className="w-4 h-4 mr-2" />Add Item</Button></div></div>
             <div className="space-y-2"><Label htmlFor="notes">Notes</Label><textarea id="notes" className="w-full min-h-[80px] rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="Any additional notes..." value={formData.notes} onChange={(e) => updateFormData("notes", e.target.value)} /></div>
             <div className="flex gap-2 justify-end pt-4 border-t">
-              <Button variant="outline" onClick={() => eventId ? router.push(`/events/${eventId}`) : router.push("/events")}>Cancel</Button>
+              <Button variant="outline" onClick={() => eventId ? router.push(eventHref.detail(eventId)) : router.push("/events")}>Cancel</Button>
               <Button onClick={handleSubmit} disabled={!formData.name || !formData.date || isSubmitting}>{isSubmitting ? "Saving..." : <><Save className="w-4 h-4 mr-2" />{eventId ? "Save Changes" : "Create Event"}</>}</Button>
             </div>
           </CardContent>

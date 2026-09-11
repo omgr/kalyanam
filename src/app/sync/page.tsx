@@ -53,6 +53,7 @@ import {
   PeerConnection,
   QRSyncData,
 } from "@/lib/sync";
+import { activateWedding } from "@/lib/session";
 
 type SyncMode = 'menu' | 'export' | 'import' | 'qr-share' | 'qr-scan' | 'p2p-host' | 'p2p-join' | 'family-room';
 
@@ -140,8 +141,17 @@ export default function SyncPage() {
     
     try {
       const content = await readFile(file);
-      const result = await importWeddingData(content, { mode: 'new' });
-      
+      let result = await importWeddingData(content, { mode: 'new' });
+
+      if (!result.success && result.alreadyExists) {
+        if (confirm(`${result.error}\n\nReplace the copy on this device with this backup?`)) {
+          result = await importWeddingData(content, { mode: 'new', replaceExisting: true });
+        } else {
+          setImportResult({ success: false, message: 'Import cancelled - existing data kept.' });
+          return;
+        }
+      }
+
       if (result.success) {
         setImportResult({
           success: true,
@@ -150,7 +160,7 @@ export default function SyncPage() {
         
         // Switch to the imported wedding
         if (result.weddingId) {
-          localStorage.setItem("kalyanam_wedding_id", result.weddingId);
+          await activateWedding(result.weddingId);
         }
       } else {
         setImportResult({
@@ -300,7 +310,7 @@ export default function SyncPage() {
                 setSyncComplete(true);
                 
                 if (result.weddingId) {
-                  localStorage.setItem("kalyanam_wedding_id", result.weddingId);
+                  await activateWedding(result.weddingId);
                 }
               } else {
                 setSyncProgress('Failed to import data: ' + result.error);

@@ -7,6 +7,7 @@
 
 import Peer, { DataConnection } from 'peerjs';
 import { db } from '@/lib/db/schema';
+import { activateWedding } from '@/lib/session';
 import {
   FamilyDevice,
   FamilyRoomMessage,
@@ -365,7 +366,7 @@ export class FamilyRoomConnection {
     );
     
     // Store wedding ID for session
-    localStorage.setItem('kalyanam_wedding_id', wedding.id);
+    await activateWedding(wedding.id);
   }
   
   // Send message to a connection

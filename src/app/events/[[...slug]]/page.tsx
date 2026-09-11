@@ -1,14 +1,21 @@
+import { Suspense } from "react";
 import EventsClient from "./EventsClient";
 
-// For optional catch-all with static export, we need to provide the base route
-// The empty slug array represents /events (the base route)
+// Event ids only exist at runtime, so only the fixed routes can be prerendered.
+// Detail and edit views are addressed with a query string on /events instead
+// (see parseRoute in EventsClient) so they never hit a missing static file.
 export function generateStaticParams() {
   return [
-    { slug: [] },          // /events
-    { slug: ['new'] },     // /events/new
+    { slug: [] },          // /events            - list, detail (?id=), edit (?id=&edit=1)
+    { slug: ['new'] },     // /events/new        - create
   ];
 }
 
 export default function EventsPage() {
-  return <EventsClient />;
+  // useSearchParams needs a Suspense boundary when the page is statically exported.
+  return (
+    <Suspense fallback={null}>
+      <EventsClient />
+    </Suspense>
+  );
 }

@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useAppSettings, useWedding } from "@/lib/db/hooks";
 import { db, AppSettings } from "@/lib/db/schema";
+import { activateWedding, clearSession } from "@/lib/session";
 import { useTheme } from "next-themes";
 
 export default function SettingsPage() {
@@ -121,7 +122,7 @@ export default function SettingsPage() {
 
           // Update localStorage
           if (data.weddings.length > 0) {
-            localStorage.setItem("kalyanam_wedding_id", data.weddings[0].id);
+            await activateWedding(data.weddings[0].id);
           }
 
           alert("Data imported successfully!");
@@ -143,8 +144,7 @@ export default function SettingsPage() {
     ) {
       if (confirm("Last chance! Type 'DELETE' to confirm.")) {
         await db.delete();
-        localStorage.removeItem("kalyanam_user_id");
-        localStorage.removeItem("kalyanam_wedding_id");
+        clearSession();
         window.location.href = "/";
       }
     }

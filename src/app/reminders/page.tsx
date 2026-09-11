@@ -22,6 +22,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useReminders, useWedding, useEvents, useTasks } from "@/lib/db/hooks";
 import { db, Reminder } from "@/lib/db/schema";
+import { resolveUserId } from "@/lib/session";
+import { toast } from "@/hooks/use-toast";
 import { generateId, formatDate } from "@/lib/utils";
 
 export default function RemindersPage() {
@@ -39,13 +41,13 @@ export default function RemindersPage() {
 
   useEffect(() => {
     const storedWeddingId = localStorage.getItem("kalyanam_wedding_id");
-    const storedUserId = localStorage.getItem("kalyanam_user_id");
     if (!storedWeddingId) {
       router.push("/onboarding");
       return;
     }
     setWeddingId(storedWeddingId);
-    setUserId(storedUserId);
+    // Derive and persist a user id if this device arrived via import or sync.
+    resolveUserId(storedWeddingId).then(setUserId);
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
@@ -54,20 +56,32 @@ export default function RemindersPage() {
   const tasks = useTasks(weddingId ?? undefined);
 
   const handleAddReminder = async () => {
-    if (!weddingId || !userId || !newReminder.title || !newReminder.scheduledFor) return;
+    if (!weddingId || !newReminder.title || !newReminder.scheduledFor) return;
 
-    await db.reminders.add({
-      id: generateId(),
-      weddingId,
-      relatedTo: newReminder.relatedTo,
-      title: newReminder.title,
-      message: newReminder.message || undefined,
-      scheduledFor: new Date(newReminder.scheduledFor),
-      repeatType: newReminder.repeatType,
-      isTriggered: false,
-      createdBy: userId,
-      createdAt: new Date(),
-    });
+    try {
+      const createdBy = userId ?? (await resolveUserId(weddingId));
+
+      await db.reminders.add({
+        id: generateId(),
+        weddingId,
+        relatedTo: newReminder.relatedTo,
+        title: newReminder.title,
+        message: newReminder.message || undefined,
+        scheduledFor: new Date(newReminder.scheduledFor),
+        repeatType: newReminder.repeatType,
+        isTriggered: false,
+        createdBy,
+        createdAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error adding reminder:", error);
+      toast({
+        variant: "destructive",
+        title: "Could not create reminder",
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      return;
+    }
 
     setNewReminder({
       title: "",

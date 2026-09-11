@@ -5,8 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-manifest.js",
     "build": "next build",
-    "build:pages": "STATIC_EXPORT=true GITHUB_PAGES_REPO=kalyanam next build && node -e \"require('fs').writeFileSync('out/.nojekyll','')\"",
+    "build:pages": "STATIC_EXPORT=true GITHUB_PAGES_REPO=kalyanam npm run prebuild && STATIC_EXPORT=true GITHUB_PAGES_REPO=kalyanam next build && node -e \"require('fs').writeFileSync('out/.nojekyll','')\"",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",

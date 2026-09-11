@@ -1,9 +1,24 @@
 /**
- * Export/Import functionality for wedding data backup and transfer
+ * Export/Import functionality for wedding data backup and transfer.
+ *
+ * Three correctness concerns drive the shape of this module:
+ *
+ *  1. JSON has no date type. Everything written by JSON.stringify comes back as
+ *     an ISO string, and putting those straight into Dexie leaves the indexes
+ *     holding a mix of Date and string keys, which makes sorts and range
+ *     queries unreliable. Dates are revived explicitly on the way in.
+ *  2. Record ids are kept stable across export/import. Minting new ids on every
+ *     import made re-importing the same backup create silent duplicates, and it
+ *     would make any future device-to-device merge impossible.
+ *  3. Writes go through a single transaction, so a failure part-way cannot
+ *     leave a wedding row behind with none of its data.
  */
 
 import { db } from '../db/schema';
+import { allCultures } from '../cultures';
 import { encryptData, decryptData, generateKey, exportKey, importKey } from './encryption';
+
+export const EXPORT_VERSION = '1.1.0';
 
 export interface WeddingExport {
   version: string;
@@ -22,6 +37,9 @@ export interface WeddingExport {
     familyMembers: any[];
     followUps: any[];
     venues: any[];
+    /** Added in 1.1.0 - absent in files written by earlier versions. */
+    paymentPlans?: any[];
+    cultures?: any[];
   };
 }
 
@@ -35,6 +53,8 @@ export interface ImportResult {
   success: boolean;
   weddingId?: string;
   weddingName?: string;
+  /** Set when the import was refused because the wedding is already here. */
+  alreadyExists?: boolean;
   stats?: {
     events: number;
     guests: number;
@@ -45,71 +65,145 @@ export interface ImportResult {
   error?: string;
 }
 
+// ============================================
+// DATE HANDLING
+// ============================================
+
 /**
- * Export all data for a wedding
+ * Fields that hold Date values, per collection. Anything listed here is
+ * converted back from its ISO string on import.
+ */
+const DATE_FIELDS: Record<string, string[]> = {
+  wedding: ['weddingDate', 'createdAt', 'updatedAt'],
+  events: ['date', 'createdAt', 'updatedAt'],
+  guests: ['rsvpDate', 'createdAt', 'updatedAt'],
+  tasks: ['dueDate', 'reminderDate', 'completedAt', 'createdAt', 'updatedAt'],
+  expenses: ['dueDate', 'reconciledAt', 'createdAt', 'updatedAt'],
+  budgetCategories: ['createdAt', 'updatedAt'],
+  vendors: ['contractDate', 'serviceDate', 'createdAt', 'updatedAt'],
+  messages: ['createdAt'],
+  reminders: ['scheduledFor', 'triggeredAt', 'createdAt'],
+  familyMembers: ['locationUpdatedAt', 'createdAt', 'updatedAt'],
+  followUps: ['dueDate', 'reminderDate', 'completedAt', 'createdAt', 'updatedAt'],
+  venues: ['createdAt', 'updatedAt'],
+  paymentPlans: ['startDate', 'nextDueDate', 'createdAt', 'updatedAt'],
+  cultures: ['createdAt', 'updatedAt'],
+};
+
+/** Nested arrays of objects that carry their own date fields. */
+const NESTED_DATE_FIELDS: Record<string, Record<string, string[]>> = {
+  events: { checklist: ['dueDate'], attachments: ['createdAt'] },
+  tasks: { subtasks: ['completedAt'], comments: ['createdAt'], attachments: ['createdAt'] },
+  expenses: { paymentSchedule: ['dueDate', 'paidDate'], receipts: ['createdAt'] },
+  paymentPlans: { installments: ['dueDate', 'paidDate'] },
+};
+
+function toDate(value: any): any {
+  if (value === null || value === undefined || value instanceof Date) return value;
+  if (typeof value !== 'string') return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed;
+}
+
+/** Revive every known date field on a record from the given collection. */
+function reviveDates<T>(collection: string, record: T): T {
+  if (!record || typeof record !== 'object') return record;
+  const out: any = { ...record };
+
+  for (const field of DATE_FIELDS[collection] ?? []) {
+    if (field in out) out[field] = toDate(out[field]);
+  }
+
+  for (const [arrayField, fields] of Object.entries(NESTED_DATE_FIELDS[collection] ?? {})) {
+    if (Array.isArray(out[arrayField])) {
+      out[arrayField] = out[arrayField].map((item: any) => {
+        if (!item || typeof item !== 'object') return item;
+        const nested = { ...item };
+        for (const field of fields) {
+          if (field in nested) nested[field] = toDate(nested[field]);
+        }
+        return nested;
+      });
+    }
+  }
+
+  // Cultures embed rituals, which carry no dates but should survive untouched.
+  return out;
+}
+
+function reviveAll(collection: string, records: any[] | undefined): any[] {
+  return (records ?? []).map((r) => reviveDates(collection, r));
+}
+
+// ============================================
+// EXPORT
+// ============================================
+
+/**
+ * Export all data for a wedding.
  */
 export async function exportWeddingData(
   weddingId: string,
   options: { encrypt?: boolean; password?: string } = {}
 ): Promise<{ data: string; filename: string; encrypted: boolean }> {
-  // Gather all data
   const wedding = await db.weddings.get(weddingId);
   if (!wedding) throw new Error('Wedding not found');
 
-  const [events, guests, tasks, expenses, budgetCategories, vendors, messages, reminders, familyMembers, followUps, venues] = await Promise.all([
-    db.events.where('weddingId').equals(weddingId).toArray(),
-    db.guests.where('weddingId').equals(weddingId).toArray(),
-    db.tasks.where('weddingId').equals(weddingId).toArray(),
-    db.expenses.where('weddingId').equals(weddingId).toArray(),
-    db.budgetCategories.where('weddingId').equals(weddingId).toArray(),
-    db.vendors.where('weddingId').equals(weddingId).toArray(),
-    db.messages.where('weddingId').equals(weddingId).toArray(),
-    db.reminders.where('weddingId').equals(weddingId).toArray(),
-    db.familyMembers.where('weddingId').equals(weddingId).toArray(),
-    db.followUps.where('weddingId').equals(weddingId).toArray(),
-    db.venues.where('weddingId').equals(weddingId).toArray(),
+  const byWedding = <T>(table: any) =>
+    table.where('weddingId').equals(weddingId).toArray() as Promise<T[]>;
+
+  const [
+    events, guests, tasks, expenses, budgetCategories, vendors,
+    messages, reminders, familyMembers, followUps, venues, paymentPlans,
+  ] = await Promise.all([
+    byWedding(db.events),
+    byWedding(db.guests),
+    byWedding(db.tasks),
+    byWedding(db.expenses),
+    byWedding(db.budgetCategories),
+    byWedding(db.vendors),
+    byWedding(db.messages),
+    byWedding(db.reminders),
+    byWedding(db.familyMembers),
+    byWedding(db.followUps),
+    byWedding(db.venues),
+    // paymentPlans holds the installment schedules - omitting it from the
+    // export silently lost every payment plan on restore.
+    byWedding(db.paymentPlans),
   ]);
 
+  // Carry the culture template too, otherwise a custom culture is unrecoverable.
+  const culture = wedding.cultureId ? await db.cultures.get(wedding.cultureId) : undefined;
+
   const exportData: WeddingExport = {
-    version: '1.0.0',
+    version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     weddingId,
     data: {
       wedding,
-      events,
-      guests,
-      tasks,
-      expenses,
-      budgetCategories,
-      vendors,
-      messages,
-      reminders,
-      familyMembers,
-      followUps,
-      venues,
+      events, guests, tasks, expenses, budgetCategories, vendors,
+      messages, reminders, familyMembers, followUps, venues,
+      paymentPlans,
+      cultures: culture ? [culture] : [],
     },
   };
 
   let jsonString = JSON.stringify(exportData, null, 2);
   let encrypted = false;
 
-  // Optionally encrypt
   if (options.encrypt && options.password) {
     const key = await generateKey();
     jsonString = await encryptData(jsonString, key);
-    // Prepend key (in real app, this should be shared separately)
     const keyString = await exportKey(key);
     jsonString = `${keyString}:${jsonString}`;
     encrypted = true;
   }
 
-  // Generate filename
   const safeName = wedding.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const date = new Date().toISOString().split('T')[0];
   const ext = encrypted ? 'kalyanam.enc' : 'kalyanam.json';
-  const filename = `${safeName}_${date}.${ext}`;
 
-  return { data: jsonString, filename, encrypted };
+  return { data: jsonString, filename: `${safeName}_${date}.${ext}`, encrypted };
 }
 
 /**
@@ -127,20 +221,28 @@ export function downloadExport(data: string, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+// ============================================
+// IMPORT
+// ============================================
+
 /**
- * Import wedding data from file
+ * Import wedding data from a backup file or a synced payload.
+ *
+ * `mode: 'new'` adds a wedding this device does not have yet. If the wedding is
+ * already present the import is refused rather than duplicated - the caller can
+ * retry with `replaceExisting` to overwrite it.
  */
 export async function importWeddingData(
   fileContent: string,
-  options: { 
+  options: {
     mode: 'new' | 'merge' | 'replace';
     targetWeddingId?: string;
+    replaceExisting?: boolean;
   } = { mode: 'new' }
 ): Promise<ImportResult> {
   try {
     let jsonString = fileContent;
 
-    // Check if encrypted (contains key prefix)
     if (fileContent.includes(':') && !fileContent.startsWith('{')) {
       const [keyString, encryptedData] = fileContent.split(':');
       const key = await importKey(keyString);
@@ -149,88 +251,98 @@ export async function importWeddingData(
 
     const exportData: WeddingExport = JSON.parse(jsonString);
 
-    // Validate structure
     if (!exportData.version || !exportData.data || !exportData.data.wedding) {
       throw new Error('Invalid export file format');
     }
 
-    const { wedding, events, guests, tasks, expenses, budgetCategories, vendors, messages, reminders, familyMembers, followUps, venues } = exportData.data;
+    const d = exportData.data;
+    const wedding = reviveDates('wedding', d.wedding);
+
+    const collections: [string, any, any[]][] = [
+      ['events', db.events, reviveAll('events', d.events)],
+      ['guests', db.guests, reviveAll('guests', d.guests)],
+      ['tasks', db.tasks, reviveAll('tasks', d.tasks)],
+      ['expenses', db.expenses, reviveAll('expenses', d.expenses)],
+      ['budgetCategories', db.budgetCategories, reviveAll('budgetCategories', d.budgetCategories)],
+      ['vendors', db.vendors, reviveAll('vendors', d.vendors)],
+      ['messages', db.messages, reviveAll('messages', d.messages)],
+      ['reminders', db.reminders, reviveAll('reminders', d.reminders)],
+      ['familyMembers', db.familyMembers, reviveAll('familyMembers', d.familyMembers)],
+      ['followUps', db.followUps, reviveAll('followUps', d.followUps)],
+      ['venues', db.venues, reviveAll('venues', d.venues)],
+      ['paymentPlans', db.paymentPlans, reviveAll('paymentPlans', d.paymentPlans)],
+    ];
 
     let targetId: string;
+    let replacing = false;
 
-    if (options.mode === 'new') {
-      // Create new wedding with new ID
-      targetId = crypto.randomUUID();
-      
-      // Update wedding ID
-      const newWedding = { ...wedding, id: targetId };
-      await db.weddings.add(newWedding);
-
-      // Helper to update weddingId references
-      const updateRef = (items: any[]) => items.map(item => ({ ...item, weddingId: targetId }));
-
-      // Add all related data
-      if (events.length) await db.events.bulkAdd(updateRef(events));
-      if (guests.length) await db.guests.bulkAdd(updateRef(guests));
-      if (tasks.length) await db.tasks.bulkAdd(updateRef(tasks));
-      if (expenses.length) await db.expenses.bulkAdd(updateRef(expenses));
-      if (budgetCategories.length) await db.budgetCategories.bulkAdd(updateRef(budgetCategories));
-      if (vendors.length) await db.vendors.bulkAdd(updateRef(vendors));
-      if (messages.length) await db.messages.bulkAdd(updateRef(messages));
-      if (reminders.length) await db.reminders.bulkAdd(updateRef(reminders));
-      if (familyMembers.length) await db.familyMembers.bulkAdd(updateRef(familyMembers));
-      if (followUps.length) await db.followUps.bulkAdd(updateRef(followUps));
-      if (venues.length) await db.venues.bulkAdd(updateRef(venues));
-
-    } else if (options.mode === 'replace' && options.targetWeddingId) {
-      // Replace existing wedding data
+    if (options.mode === 'replace' && options.targetWeddingId) {
       targetId = options.targetWeddingId;
-
-      // Delete existing data
-      await Promise.all([
-        db.events.where('weddingId').equals(targetId).delete(),
-        db.guests.where('weddingId').equals(targetId).delete(),
-        db.tasks.where('weddingId').equals(targetId).delete(),
-        db.expenses.where('weddingId').equals(targetId).delete(),
-        db.budgetCategories.where('weddingId').equals(targetId).delete(),
-        db.vendors.where('weddingId').equals(targetId).delete(),
-        db.messages.where('weddingId').equals(targetId).delete(),
-        db.reminders.where('weddingId').equals(targetId).delete(),
-        db.familyMembers.where('weddingId').equals(targetId).delete(),
-        db.followUps.where('weddingId').equals(targetId).delete(),
-        db.venues.where('weddingId').equals(targetId).delete(),
-      ]);
-
-      // Update and replace
-      const updateRef = (items: any[]) => items.map(item => ({ ...item, weddingId: targetId }));
-      
-      await db.weddings.update(targetId, { ...wedding, id: targetId });
-      if (events.length) await db.events.bulkAdd(updateRef(events));
-      if (guests.length) await db.guests.bulkAdd(updateRef(guests));
-      if (tasks.length) await db.tasks.bulkAdd(updateRef(tasks));
-      if (expenses.length) await db.expenses.bulkAdd(updateRef(expenses));
-      if (budgetCategories.length) await db.budgetCategories.bulkAdd(updateRef(budgetCategories));
-      if (vendors.length) await db.vendors.bulkAdd(updateRef(vendors));
-      if (messages.length) await db.messages.bulkAdd(updateRef(messages));
-      if (reminders.length) await db.reminders.bulkAdd(updateRef(reminders));
-      if (familyMembers.length) await db.familyMembers.bulkAdd(updateRef(familyMembers));
-      if (followUps.length) await db.followUps.bulkAdd(updateRef(followUps));
-      if (venues.length) await db.venues.bulkAdd(updateRef(venues));
-
+      replacing = true;
+    } else if (options.mode === 'new') {
+      // Ids are preserved, so importing a wedding that is already here would
+      // otherwise duplicate or collide. Detect it and let the caller decide.
+      targetId = wedding.id;
+      const existing = await db.weddings.get(targetId);
+      if (existing && !options.replaceExisting) {
+        return {
+          success: false,
+          alreadyExists: true,
+          weddingId: targetId,
+          weddingName: wedding.name,
+          error: `"${wedding.name}" is already on this device. Choose replace to overwrite it with this backup.`,
+        };
+      }
+      replacing = Boolean(existing);
     } else {
       throw new Error('Invalid import mode or missing target wedding ID');
     }
+
+    const withWeddingId = (items: any[]) => items.map((item) => ({ ...item, weddingId: targetId }));
+
+    // One transaction: either the whole wedding lands or none of it does.
+    await db.transaction(
+      'rw',
+      [db.weddings, db.cultures, ...collections.map(([, table]) => table)],
+      async () => {
+        if (replacing) {
+          for (const [, table] of collections) {
+            await table.where('weddingId').equals(targetId).delete();
+          }
+        }
+
+        await db.weddings.put({ ...wedding, id: targetId });
+
+        for (const [, table, records] of collections) {
+          if (records.length) await table.bulkPut(withWeddingId(records));
+        }
+
+        // Culture templates are shared, not wedding-scoped; keep any we're given.
+        for (const culture of reviveAll('cultures', d.cultures)) {
+          if (culture?.id) await db.cultures.put(culture);
+        }
+
+        // Backups written before 1.1.0 carry no culture. Re-seed the built-in
+        // template so a restored wedding still resolves its rituals.
+        if (wedding.cultureId && !(await db.cultures.get(wedding.cultureId))) {
+          const builtIn = allCultures.find((c) => c.id === wedding.cultureId);
+          if (builtIn) await db.cultures.put(builtIn as any);
+        }
+      }
+    );
+
+    const get = (name: string) => collections.find(([n]) => n === name)?.[2] ?? [];
 
     return {
       success: true,
       weddingId: targetId,
       weddingName: wedding.name,
       stats: {
-        events: events.length,
-        guests: guests.length,
-        tasks: tasks.length,
-        expenses: expenses.length,
-        vendors: vendors.length,
+        events: get('events').length,
+        guests: get('guests').length,
+        tasks: get('tasks').length,
+        expenses: get('expenses').length,
+        vendors: get('vendors').length,
       },
     };
   } catch (error) {
@@ -253,4 +365,3 @@ export function readFile(file: File): Promise<string> {
     reader.readAsText(file);
   });
 }
-
