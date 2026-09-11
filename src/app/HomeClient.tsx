@@ -360,12 +360,22 @@ export default function HomeClient() {
             </a>
             {" · "}Engineering by{" "}
             <a
-              href="https://github.com/omgr"
+              href="https://www.linkedin.com/in/ongolemadangopal/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline font-medium"
             >
               Madan Gopal Ongole
+            </a>
+          </p>
+          <p className="text-sm mt-1">
+            <a
+              href="https://github.com/omgr/kalyanam"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground hover:underline"
+            >
+              Free and open source on GitHub
             </a>
           </p>
           <p className="text-sm mt-2">© {new Date().getFullYear()} Kalyanam. All rights reserved.</p>

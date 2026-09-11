@@ -55,7 +55,7 @@ validation and defined what it should be before any code existed.
 
 ## Madan Gopal Ongole — Engineering
 
-**GitHub:** [@omgr](https://github.com/omgr)
+**LinkedIn:** [ongolemadangopal](https://www.linkedin.com/in/ongolemadangopal/) · **GitHub:** [@omgr](https://github.com/omgr)
 
 - Application architecture and full implementation: Next.js App Router, TypeScript, Dexie over
   IndexedDB, Tailwind, Radix.

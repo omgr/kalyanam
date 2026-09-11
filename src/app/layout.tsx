@@ -44,7 +44,7 @@ export const metadata: Metadata = {
   ],
   authors: [
     { name: "Harini Amperayani", url: "https://harini-amperayani.com" },
-    { name: "Madan Gopal Ongole", url: "https://github.com/omgr" },
+    { name: "Madan Gopal Ongole", url: "https://www.linkedin.com/in/ongolemadangopal/" },
   ],
   creator: "Harini Amperayani and Madan Gopal Ongole",
   publisher: "Kalyanam",
@@ -129,8 +129,21 @@ export default function RootLayout({
                   "Works offline",
                 ],
                 author: [
-                  { "@type": "Person", name: "Harini Amperayani", url: "https://harini-amperayani.com" },
-                  { "@type": "Person", name: "Madan Gopal Ongole", url: "https://github.com/omgr" },
+                  {
+                  "@type": "Person",
+                  name: "Harini Amperayani",
+                  url: "https://harini-amperayani.com",
+                  sameAs: ["https://harini-amperayani.com"],
+                },
+                  {
+                  "@type": "Person",
+                  name: "Madan Gopal Ongole",
+                  url: "https://www.linkedin.com/in/ongolemadangopal/",
+                  sameAs: [
+                    "https://www.linkedin.com/in/ongolemadangopal/",
+                    "https://github.com/omgr",
+                  ],
+                },
                 ],
               }),
             }}

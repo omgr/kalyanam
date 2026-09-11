@@ -13,13 +13,16 @@
 | | |
 | --- | --- |
 | **Harini Amperayani** | Product Owner · Product Designer · UX Designer · UAT — [harini-amperayani.com](https://harini-amperayani.com) · [@HariniAmperayani](https://github.com/HariniAmperayani) |
-| **Madan Gopal Ongole** | Engineering — [@omgr](https://github.com/omgr) |
+| **Madan Gopal Ongole** | Engineering — [LinkedIn](https://www.linkedin.com/in/ongolemadangopal/) · [@omgr](https://github.com/omgr) |
 
 The original concept for Kalyanam was **Harini's**. She owned the product definition, user
 research, personas, information architecture and the complete design system, and validated the
 result through usability testing and UAT against a real wedding plan.
 
 🏗️ **[Architecture](docs/ARCHITECTURE.md)** — how local-first, no-backend sync actually works (with diagrams)
+📱 **[Connecting Devices](docs/CONNECTING-DEVICES.md)** — get the family in sync, and who can join
+🧭 **[Messages & Finding Family](docs/FINDING-FAMILY.md)** — venue areas and the wedding-day features
+🧪 **[Testing on Two Devices](docs/TESTING-TWO-DEVICES.md)** — the November rehearsal script
 📐 **[Design System](docs/DESIGN-SYSTEM.md)** — palette, typography, components, motion, accessibility
 🙏 **[Full Credits](CREDITS.md)**
 
