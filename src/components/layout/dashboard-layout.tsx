@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clearSession } from "@/lib/session";
+import { FamilySyncIndicator } from "@/components/sync/family-sync-indicator";
 import { useTheme } from "next-themes";
 
 interface DashboardLayoutProps {
@@ -96,6 +97,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
           {/* Bottom Section */}
           <div className="border-t border-border p-4 space-y-2">
+            <FamilySyncIndicator />
             <Link
               href="/settings"
               className={cn(

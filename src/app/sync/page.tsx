@@ -54,6 +54,7 @@ import {
   QRSyncData,
 } from "@/lib/sync";
 import { activateWedding } from "@/lib/session";
+import { FamilySyncPanel } from "@/components/sync/family-sync-panel";
 
 type SyncMode = 'menu' | 'export' | 'import' | 'qr-share' | 'qr-scan' | 'p2p-host' | 'p2p-join' | 'family-room';
 
@@ -399,6 +400,9 @@ export default function SyncPage() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
+              {/* Live family sync - the CRDT-backed path */}
+              {weddingId && <FamilySyncPanel weddingId={weddingId} />}
+
               {/* Export/Import */}
               <Card className="hover:shadow-lg transition-shadow">
                 <CardHeader>

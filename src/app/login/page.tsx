@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  Users,
   Heart,
   LogIn,
   Plus,
@@ -27,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { db, Wedding } from "@/lib/db/schema";
 import { activateWedding, clearSession } from "@/lib/session";
+import { FamilySyncJoin } from "@/components/sync/family-sync-join";
 import { formatDate, getDaysUntil } from "@/lib/utils";
 import {
   importWeddingData,
@@ -35,7 +37,7 @@ import {
   ConnectionState,
 } from "@/lib/sync";
 
-type LoginMode = 'select' | 'sync-code' | 'import';
+type LoginMode = 'select' | 'sync-code' | 'import' | 'family-invite';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -285,6 +287,7 @@ export default function LoginPage() {
             <Heart className="w-10 h-10 text-primary" fill="currentColor" />
           </div>
           <h1 className="text-3xl font-display font-bold mb-2">
+            {mode === 'family-invite' && 'Join with Family Sync'}
             {mode === 'select' && 'Welcome to Kalyanam'}
             {mode === 'sync-code' && 'Sync from Another Device'}
             {mode === 'import' && 'Import Wedding Data'}
@@ -298,6 +301,10 @@ export default function LoginPage() {
 
         <AnimatePresence mode="wait">
           {/* SELECT MODE */}
+          {mode === 'family-invite' && (
+            <FamilySyncJoin onCancel={() => setMode('select')} />
+          )}
+
           {mode === 'select' && (
             <motion.div
               key="select"
@@ -316,6 +323,20 @@ export default function LoginPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start h-auto py-4"
+                      onClick={() => setMode('family-invite')}
+                    >
+                      <Users className="w-5 h-5 mr-3 text-primary" />
+                      <div className="text-left">
+                        <p className="font-medium">Join with Family Sync</p>
+                        <p className="text-xs text-muted-foreground">
+                          Paste an invite code and stay in sync from then on
+                        </p>
+                      </div>
+                    </Button>
+
                     <Button
                       variant="outline"
                       className="w-full justify-start h-auto py-4"

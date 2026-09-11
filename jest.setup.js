@@ -12,8 +12,17 @@ if (typeof globalThis.structuredClone !== "function") {
   globalThis.structuredClone = (value) => v8.deserialize(v8.serialize(value));
 }
 
+// jsdom ships neither TextEncoder/TextDecoder nor SubtleCrypto; both are
+// standard in every browser the app actually runs in.
+const { TextEncoder, TextDecoder } = require("node:util");
+if (!globalThis.TextEncoder) globalThis.TextEncoder = TextEncoder;
+if (!globalThis.TextDecoder) globalThis.TextDecoder = TextDecoder;
+
 // crypto.randomUUID is not available in the jsdom environment.
 if (!globalThis.crypto) globalThis.crypto = {};
+if (!globalThis.crypto.subtle) {
+  globalThis.crypto.subtle = require("node:crypto").webcrypto.subtle;
+}
 if (typeof globalThis.crypto.getRandomValues !== "function") {
   globalThis.crypto.getRandomValues = (arr) => {
     for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
