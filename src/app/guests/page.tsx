@@ -16,6 +16,7 @@ import {
   Download,
   Upload,
   UserPlus,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,8 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useGuests, useWedding, useGuestStats } from "@/lib/db/hooks";
 import { db, Guest } from "@/lib/db/schema";
 import { generateId } from "@/lib/utils";
+import { GuestImport } from "@/components/guests/guest-import";
+import { InvitationCard } from "@/components/guests/invitation-card";
 
 export default function GuestsPage() {
   const router = useRouter();
@@ -33,6 +36,8 @@ export default function GuestsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSide, setFilterSide] = useState<string>("all");
   const [isAddingGuest, setIsAddingGuest] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [showInvitation, setShowInvitation] = useState(false);
   const [newGuest, setNewGuest] = useState({
     name: "",
     phone: "",
@@ -157,10 +162,14 @@ export default function GuestsPage() {
               {guests?.length || 0} guests invited
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline">
-              <Download className="w-4 h-4 mr-2" />
-              Export
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => setShowInvitation((v) => !v)}>
+              <ImageIcon className="w-4 h-4 mr-2" />
+              Invitation
+            </Button>
+            <Button variant="outline" onClick={() => setIsImporting((v) => !v)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Import
             </Button>
             <Button onClick={() => setIsAddingGuest(true)}>
               <UserPlus className="w-4 h-4 mr-2" />
@@ -168,6 +177,12 @@ export default function GuestsPage() {
             </Button>
           </div>
         </div>
+
+        {isImporting && (
+          <GuestImport weddingId={weddingId} onDone={() => setIsImporting(false)} />
+        )}
+
+        {showInvitation && <InvitationCard weddingId={weddingId} />}
 
         {/* Stats */}
         {stats && (
