@@ -22,7 +22,10 @@ Everything described below is committed and pushed. Nothing is half-saved.
 | Repo consolidation | Source now in `omgr/kalyanam`; `omgr/mdviewer` cleaned |
 | Git history | Only `omgr` and `Harini Amperayani` — Slalom **and** BCG identities scrubbed from both repos |
 | Credits + design system | `CREDITS.md`, `docs/DESIGN-SYSTEM.md`, README, live footer |
-| Family sync | **Implemented** — see below |
+| Family sync | **Implemented and verified device-to-device** |
+| Messages | Fixed — they never synced at all before |
+| Family locator | Fixed — every device used to share one identity |
+| Venue areas | Now editable and synced, was a hardcoded list |
 
 ---
 
@@ -76,19 +79,24 @@ The PeerJS broker answers in ~100ms and was already a dependency.
 
 ## Outstanding, not started
 
-- **Google Search Console** — free, but needs Madan's Google account. Verify
-  `https://omgr.github.io/kalyanam/` and submit `sitemap.xml`. Nothing gets
-  indexed until this happens.
-- **Custom domain** — `SITE_URL` is already a build-time variable, so switching is
-  one env var plus a CNAME. Worth more for search than any on-page change.
-- **Architecture docs with diagrams** — requested, not yet written. Should cover
-  the local-first model and how no-backend sync actually works.
-- **Accessibility gaps** listed honestly at the end of `DESIGN-SYSTEM.md`
-  (reduced-motion, icon-only labels, hover-only checklist delete).
-- **Rotate the GitHub PAT.** It now lives in the macOS keychain and is out of both
-  `.git/config` files, but it sat in plaintext for a long time.
+**Before December**
+- **November rehearsal** on two physical phones on different networks, following
+  [TESTING-TWO-DEVICES.md](TESTING-TWO-DEVICES.md). Section 6 (venue wifi, backgrounding,
+  an actual iPhone) has no automated equivalent.
+- **Sync step 4** from [SYNC-DESIGN.md](SYNC-DESIGN.md): richer connection state in the
+  UI, relay fallback, plain-language failure messages.
+- **Revoking an invite** is not a button yet. Today the only way to change the room
+  secret is export / clear / re-import.
 
----
+**SEO**
+- Search Console verification file is live at `/googlec87ea44e6726ed70.html`; Madan to
+  press Verify and submit `sitemap.xml`.
+- Custom domain deferred by Madan. `SITE_URL` is already a build-time variable.
+
+**Known gaps**
+- Accessibility items listed at the end of [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md):
+  `prefers-reduced-motion`, some icon-only labels, hover-only checklist delete.
+- Rotate the GitHub PAT; it is in the keychain now but sat in plaintext for a long time.
 
 ## Local setup
 
