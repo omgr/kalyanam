@@ -36,6 +36,9 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Tests
+        run: npm test -- --ci
+
       - name: Build static export
         run: npm run build:pages
         env:
