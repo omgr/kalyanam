@@ -61,21 +61,38 @@ the venue and checking in is far more precise, and it costs no battery.
 
 **Setting the venue up — do this once, before the wedding**
 
-1. Go to **Find Family**.
-2. Under **Venue Areas**, either tap *Add common wedding areas* for a sensible starting set,
-   or type your own: `Upstairs Mandapam`, `Dining Hall`, `Bride's Room`, `Car Park`, `Kitchen`.
-3. That is it. **The list syncs to every family device automatically** — nobody else has to
-   set anything up.
+1. Go to **Find Family** → **Venue Areas**.
+2. Tap *Add common wedding areas*, or type your own: `Upstairs Mandapam`, `Dining Hall`,
+   `Bride's Room`, `Car Park`.
+3. **Walk round the venue once and tap the crosshair beside each area while standing in it.**
+   That pins the area to where it actually is. A pinned area turns green.
+4. That is all. The list *and* the pins sync to every family device automatically.
 
-Walk the venue beforehand if you can and name areas the way your family actually refers to
-them. "Behind the stage" beats "Zone 4".
+### Automatic tracking — so nobody has to keep checking in
 
-**Checking in during the event**
+Once areas are pinned, turn on **Track my area automatically**. Your phone then works out
+which area you are in as you move, and updates it for everyone without you touching anything.
 
-1. **Find Family** → pick your area from **Your Location**.
-2. Tap **Share Location**.
+**How it manages that without beacons:** GPS indoors is only accurate to 15–50 metres, which
+sounds far too coarse. But the error is *consistent* — two readings taken at the same venue
+minutes apart are wrong in the same direction by about the same amount. So instead of
+comparing your position against a map, the app compares it against the pins you captured at
+that same venue. Relative comparison is much more reliable than the raw accuracy suggests.
 
-Everyone connected now sees you in that area. Change it as you move; it takes two taps.
+It also refuses to flip back and forth: a new area has to be at least 10 metres closer than
+your current one before it reports a move, so standing on a boundary does not make you appear
+to bounce between two rooms.
+
+**What it cannot do**
+
+- **Floors.** Two areas stacked above each other are the same point to GPS. Give them one
+  shared area name, or check in by hand.
+- **Work with the screen off.** Phones suspend background tabs to save battery. No web app can
+  track anyone while it is closed — this runs while Kalyanam is on screen.
+- **Anything without a pin.** Unpinned areas stay pickable by hand.
+
+**Checking in by hand** is still there for anywhere GPS cannot help: pick your area under
+**Your Location** and tap Share.
 
 **Finding someone**
 

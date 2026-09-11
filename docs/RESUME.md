@@ -25,7 +25,11 @@ Everything described below is committed and pushed. Nothing is half-saved.
 | Family sync | **Implemented and verified device-to-device** |
 | Messages | Fixed — they never synced at all before |
 | Family locator | Fixed — every device used to share one identity |
-| Venue areas | Now editable and synced, was a hardcoded list |
+| Venue areas | Editable, pinnable and synced; was a hardcoded list |
+| Automatic area tracking | New — phones match GPS against pinned areas, no check-in needed |
+| Guest import | New — contacts picker, CSV and vCard, with dedup |
+| Invitation card | New — upload once, one tap per household via WhatsApp |
+| Sync step 4 | Done — diagnosis, retry, last-synced freshness |
 
 ---
 
@@ -83,8 +87,6 @@ The PeerJS broker answers in ~100ms and was already a dependency.
 - **November rehearsal** on two physical phones on different networks, following
   [TESTING-TWO-DEVICES.md](TESTING-TWO-DEVICES.md). Section 6 (venue wifi, backgrounding,
   an actual iPhone) has no automated equivalent.
-- **Sync step 4** from [SYNC-DESIGN.md](SYNC-DESIGN.md): richer connection state in the
-  UI, relay fallback, plain-language failure messages.
 - **Revoking an invite** is not a button yet. Today the only way to change the room
   secret is export / clear / re-import.
 
