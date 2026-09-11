@@ -11,6 +11,7 @@
 /** Collections that belong to a wedding and are safe to replicate. */
 export const SYNCED_TABLES = [
   "events",
+  "messages",
   "guests",
   "tasks",
   "expenses",
@@ -27,14 +28,17 @@ export type SyncedTable = (typeof SYNCED_TABLES)[number];
 
 /**
  * Deliberately excluded from sync:
- *   messages        - duplicates what the family already does in WhatsApp
- *   locationPings   - ephemeral and privacy-sensitive
- *   locationRequests- same
+ *   locationPings   - a ping history is noise; the member's own lastLocation
+ *                     carries the part anyone needs, and it does sync
+ *   locationRequests- transient, meaningful only on the asking device
  *   cultures        - shared templates, seeded locally from the built-ins
- *   appSettings     - per-device preference, not shared state
+ *   appSettings     - a per-device preference, not shared state
+ *
+ * Messages were excluded at first on the grounds that families already use
+ * WhatsApp. That was the wrong call: a message that never reaches anyone is
+ * worse than no messaging at all, because it looks like it worked.
  */
 export const LOCAL_ONLY_TABLES = [
-  "messages",
   "locationPings",
   "locationRequests",
   "cultures",

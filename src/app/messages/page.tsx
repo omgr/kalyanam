@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useMessages, useWedding, useFamilyMembers } from "@/lib/db/hooks";
 import { db, Message } from "@/lib/db/schema";
-import { resolveUserId } from "@/lib/session";
+import { resolveUserId, getDeviceMemberId } from "@/lib/session";
 import { toast } from "@/hooks/use-toast";
 import { generateId, formatDate } from "@/lib/utils";
 
@@ -58,7 +58,13 @@ export default function MessagesPage() {
     if (!weddingId || !newMessage.content) return;
 
     const senderUserId = userId ?? (await resolveUserId(weddingId));
-    const member = familyMembers?.find((m) => m.userId === senderUserId);
+    // Prefer the family member this device belongs to. The user id is shared
+    // by every device on the wedding, so on its own it cannot say who is
+    // actually sending.
+    const deviceMemberId = getDeviceMemberId();
+    const member =
+      familyMembers?.find((m) => m.id === deviceMemberId) ??
+      familyMembers?.find((m) => m.userId === senderUserId);
 
     try {
       await db.messages.add({
@@ -150,7 +156,11 @@ export default function MessagesPage() {
     return null;
   }
 
-  const currentMember = familyMembers?.find((m) => m.userId === userId);
+  // This device's own member record, falling back to the shared user id for
+  // devices that predate the "who is using this device" step.
+  const currentMember =
+    familyMembers?.find((m) => m.id === getDeviceMemberId()) ??
+    familyMembers?.find((m) => m.userId === userId);
   const unreadCount = messages?.filter(
     (m) => !m.readBy.includes(currentMember?.id || userId || "")
   ).length;

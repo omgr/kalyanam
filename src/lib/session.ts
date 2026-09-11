@@ -15,6 +15,17 @@ import { generateId } from "./utils";
 export const USER_ID_KEY = "kalyanam_user_id";
 export const WEDDING_ID_KEY = "kalyanam_wedding_id";
 
+/**
+ * Which family member is holding *this* device.
+ *
+ * Distinct from the user id on purpose. The user id is recovered from the
+ * wedding data so that writes never fail silently, which means every device
+ * that joins a wedding ends up with the same one - fine for authorship, useless
+ * for "who is where". Anything that answers a question about a person, rather
+ * than about the data, has to use this instead.
+ */
+export const DEVICE_MEMBER_KEY = "kalyanam_member_id";
+
 export function getStoredUserId(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(USER_ID_KEY);
@@ -71,7 +82,35 @@ export async function activateWedding(weddingId: string): Promise<string> {
   return resolveUserId(weddingId);
 }
 
+/** The family member this device belongs to, if one has been chosen. */
+export function getDeviceMemberId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(DEVICE_MEMBER_KEY);
+}
+
+export function setDeviceMemberId(memberId: string): void {
+  localStorage.setItem(DEVICE_MEMBER_KEY, memberId);
+}
+
+export function clearDeviceMemberId(): void {
+  localStorage.removeItem(DEVICE_MEMBER_KEY);
+}
+
+/**
+ * Resolve the family member record for this device, if the chosen one still
+ * exists. Returns null when nobody has been picked yet - callers should ask
+ * rather than guessing, because guessing means one person's phone reports
+ * another person's location.
+ */
+export async function getDeviceMember(weddingId: string) {
+  const memberId = getDeviceMemberId();
+  if (!memberId) return null;
+  const member = await db.familyMembers.get(memberId);
+  return member && member.weddingId === weddingId ? member : null;
+}
+
 export function clearSession(): void {
   localStorage.removeItem(USER_ID_KEY);
   localStorage.removeItem(WEDDING_ID_KEY);
+  localStorage.removeItem(DEVICE_MEMBER_KEY);
 }

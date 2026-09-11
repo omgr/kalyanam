@@ -24,7 +24,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useFamilyMembers, useWedding, useVenues, useLocationPings } from "@/lib/db/hooks";
 import { db, FamilyMember, LocationData, LocationPing } from "@/lib/db/schema";
-import { resolveUserId } from "@/lib/session";
+import { resolveUserId, getDeviceMemberId } from "@/lib/session";
+import { WhoAreYou } from "@/components/sync/who-are-you";
+import { VenueZones } from "@/components/sync/venue-zones";
 import { toast } from "@/hooks/use-toast";
 import { generateId } from "@/lib/utils";
 
@@ -37,6 +39,7 @@ export default function LocationPage() {
   const [currentLocation, setCurrentLocation] = useState<GeolocationPosition | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string>("");
+  const [deviceMemberId, setDeviceMemberIdState] = useState<string | null>(null);
 
   useEffect(() => {
     const storedWeddingId = localStorage.getItem("kalyanam_wedding_id");
@@ -47,6 +50,7 @@ export default function LocationPage() {
     setWeddingId(storedWeddingId);
     // Derive and persist a user id if this device arrived via import or sync.
     resolveUserId(storedWeddingId).then(setUserId);
+    setDeviceMemberIdState(getDeviceMemberId());
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
@@ -89,18 +93,15 @@ export default function LocationPage() {
   const shareLocation = async () => {
     if (!weddingId || !currentLocation) return;
 
-    const activeUserId = userId ?? (await resolveUserId(weddingId));
-    // Fall back to the primary organiser if this device has no matching member
-    // record (e.g. the data arrived from another device via import or sync).
-    const member =
-      familyMembers?.find((m) => m.userId === activeUserId) ||
-      familyMembers?.find((m) => m.role === "primary") ||
-      familyMembers?.[0];
+    // Share as whoever this device says it belongs to. Guessing here would
+    // report one person's phone as another person's location, which is worse
+    // than not sharing at all.
+    const member = familyMembers?.find((m) => m.id === deviceMemberId);
     if (!member) {
       toast({
         variant: "destructive",
-        title: "No family member to share as",
-        description: "Add yourself under Family first, then share your location.",
+        title: "Tell us who you are first",
+        description: "Choose which family member is using this device, then share your location.",
       });
       return;
     }
@@ -173,7 +174,8 @@ export default function LocationPage() {
     return "weak";
   };
 
-  const zones = [
+  /** Sensible starting points when a family has not described their venue yet. */
+  const DEFAULT_ZONES = [
     "Main Hall",
     "Garden",
     "Entrance",
@@ -185,6 +187,12 @@ export default function LocationPage() {
     "Reception",
     "Other",
   ];
+
+  // Zones defined for the venue win, so "Sai Gardens - Upstairs Mandapam" is
+  // possible rather than everyone picking from a generic list. Venues sync, so
+  // one person sets them up and the whole family gets them.
+  const venueZones = venues?.[0]?.zones?.map((z) => z.name) ?? [];
+  const zones = venueZones.length > 0 ? venueZones : DEFAULT_ZONES;
 
   if (!weddingId || !wedding) {
     return null;
@@ -209,6 +217,14 @@ export default function LocationPage() {
             Refresh Location
           </Button>
         </div>
+
+        {/* Until this device says who is holding it, sharing a location would
+            be attributed to the wrong person. */}
+        {!deviceMemberId && (
+          <WhoAreYou weddingId={weddingId} onChosen={setDeviceMemberIdState} />
+        )}
+
+        <VenueZones weddingId={weddingId} />
 
         {/* Your Location Card */}
         <Card className="border-primary">
