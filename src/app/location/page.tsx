@@ -27,6 +27,7 @@ import { db, FamilyMember, LocationData, LocationPing } from "@/lib/db/schema";
 import { resolveUserId, getDeviceMemberId } from "@/lib/session";
 import { WhoAreYou } from "@/components/sync/who-are-you";
 import { VenueZones } from "@/components/sync/venue-zones";
+import { AutoLocationPanel } from "@/components/sync/auto-location-panel";
 import { toast } from "@/hooks/use-toast";
 import { generateId } from "@/lib/utils";
 
@@ -225,6 +226,12 @@ export default function LocationPage() {
         )}
 
         <VenueZones weddingId={weddingId} />
+
+        <AutoLocationPanel
+          weddingId={weddingId}
+          memberId={deviceMemberId}
+          zones={venues?.[0]?.zones}
+        />
 
         {/* Your Location Card */}
         <Card className="border-primary">

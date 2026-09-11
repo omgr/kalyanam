@@ -400,6 +400,18 @@ export interface VenueZone {
   floor?: number;
   description?: string;
   color?: string;
+  /**
+   * Where this area actually is, captured by standing in it once.
+   *
+   * Absolute GPS accuracy indoors is poor, but every reading taken at the same
+   * venue carries roughly the same error, so comparing distances *between*
+   * areas is far more reliable than the raw accuracy figure suggests. That is
+   * what lets the app work out which area someone is in without asking.
+   */
+  latitude?: number;
+  longitude?: number;
+  /** Metres. Defaults to DEFAULT_ZONE_RADIUS_M when unset. */
+  radius?: number;
 }
 
 // Reminders & Notifications

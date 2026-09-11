@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Plus, Trash2, MapPin } from "lucide-react";
+import { Building2, Plus, Trash2, MapPin, Crosshair, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db, type VenueZone } from "@/lib/db/schema";
 import { useVenues, useWedding } from "@/lib/db/hooks";
 import { generateId } from "@/lib/utils";
+import { DEFAULT_ZONE_RADIUS_M } from "@/lib/location/zones";
 import { toast } from "@/hooks/use-toast";
 
 const STARTER_ZONES = [
@@ -27,6 +28,7 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
   const venues = useVenues(weddingId);
   const wedding = useWedding(weddingId);
   const [newZone, setNewZone] = useState("");
+  const [placing, setPlacing] = useState<string | null>(null);
   const venue = venues?.[0];
 
   const saveZones = async (zones: VenueZone[]) => {
@@ -70,6 +72,51 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
     await saveZones(zones.filter((z) => z.id !== id));
   };
 
+  /**
+   * Capture where an area actually is by standing in it.
+   *
+   * Doing this once per area is what turns the locator from "everyone taps
+   * their location all day" into something that updates by itself.
+   */
+  const placeZone = async (zone: VenueZone) => {
+    if (!navigator.geolocation) {
+      toast({ variant: "destructive", title: "This browser cannot read a location" });
+      return;
+    }
+    setPlacing(zone.id);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        await saveZones(
+          zones.map((z) =>
+            z.id === zone.id
+              ? {
+                  ...z,
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                  radius: z.radius ?? DEFAULT_ZONE_RADIUS_M,
+                }
+              : z
+          )
+        );
+        setPlacing(null);
+        toast({
+          variant: "success",
+          title: `${zone.name} pinned`,
+          description: "Family phones will now recognise this area on their own.",
+        });
+      },
+      () => {
+        setPlacing(null);
+        toast({
+          variant: "destructive",
+          title: "Could not get a location fix",
+          description: "Step outside or near a window and try again.",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 20000 }
+    );
+  };
+
   const addStarters = async () => {
     const existing = new Set(zones.map((z) => z.name.toLowerCase()));
     const additions = STARTER_ZONES.filter((n) => !existing.has(n.toLowerCase())).map((name) => ({
@@ -87,30 +134,53 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
           Venue Areas
         </CardTitle>
         <CardDescription>
-          Name the parts of {wedding?.venue || "your venue"} so family can say where they are.
-          Everyone on the wedding gets the same list automatically.
+          Name the parts of {wedding?.venue || "your venue"}, then walk round once and tap the
+          crosshair in each one to pin it. After that, family phones recognise the area on their
+          own - nobody has to keep checking in. The list syncs to everyone automatically.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
         {zones.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {zones.map((zone) => (
-              <span
-                key={zone.id}
-                className="group inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-sm"
-              >
-                <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                {zone.name}
-                <button
-                  onClick={() => removeZone(zone.id)}
-                  aria-label={`Remove ${zone.name}`}
-                  className="ml-1 text-muted-foreground hover:text-red-500 transition-colors"
+            {zones.map((zone) => {
+              const pinned = typeof zone.latitude === "number";
+              return (
+                <span
+                  key={zone.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm ${
+                    pinned ? "bg-green-100 dark:bg-green-900/30" : "bg-muted"
+                  }`}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </span>
-            ))}
+                  {pinned ? (
+                    <Check className="w-3.5 h-3.5 text-green-600" />
+                  ) : (
+                    <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  {zone.name}
+                  <button
+                    onClick={() => placeZone(zone)}
+                    disabled={placing === zone.id}
+                    aria-label={`Pin ${zone.name} to where I am standing`}
+                    title={pinned ? "Re-pin to where I am standing" : "Pin to where I am standing"}
+                    className="ml-1 text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    {placing === zone.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Crosshair className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => removeZone(zone.id)}
+                    aria-label={`Remove ${zone.name}`}
+                    className="text-muted-foreground hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-4 space-y-3">
@@ -122,6 +192,13 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
               Add common wedding areas
             </Button>
           </div>
+        )}
+
+        {zones.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {zones.filter((z) => typeof z.latitude === "number").length} of {zones.length} areas
+            pinned. Unpinned areas can still be chosen by hand.
+          </p>
         )}
 
         <div className="flex gap-2">
