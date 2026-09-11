@@ -38,6 +38,8 @@ export type SyncStatus =
 export interface PeerSyncOptions {
   onStatus?: (status: SyncStatus, peerCount: number) => void;
   onError?: (error: Error) => void;
+  /** Called when we can explain a failure in plain language. */
+  onDiagnosis?: (message: string) => void;
   /** Override the broker; defaults to the PeerJS public cloud. */
   peerOptions?: Record<string, unknown>;
   /** How often to re-dial empty slots, to pick up devices that join later. */
@@ -47,6 +49,10 @@ export interface PeerSyncOptions {
 export interface PeerSyncHandle {
   status: () => SyncStatus;
   peerCount: () => number;
+  /** Why the last failure happened, in words a family can act on. */
+  diagnosis: () => string | null;
+  /** Retry from scratch: reclaim a slot and re-dial. */
+  retry: () => Promise<void>;
   destroy: () => void;
 }
 
@@ -70,12 +76,18 @@ export async function startPeerSync(
   secret: string,
   options: PeerSyncOptions = {}
 ): Promise<PeerSyncHandle> {
-  const { onStatus, onError, peerOptions, rediscoverMs = 20000 } = options;
+  const { onStatus, onError, onDiagnosis, peerOptions, rediscoverMs = 20000 } = options;
 
   let status: SyncStatus = "connecting";
   let destroyed = false;
   let peer: Peer | null = null;
   let mySlot = -1;
+  let diagnosis: string | null = null;
+
+  const diagnose = (message: string) => {
+    diagnosis = message;
+    onDiagnosis?.(message);
+  };
   const connections = new Map<string, DataConnection>();
   let rediscoverTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -96,7 +108,15 @@ export async function startPeerSync(
 
   if (typeof RTCPeerConnection === "undefined") {
     onStatus?.("unsupported", 0);
-    return { status: () => "unsupported", peerCount: () => 0, destroy: () => {} };
+    return {
+      status: () => "unsupported",
+      peerCount: () => 0,
+      diagnosis: () =>
+        "This browser cannot make direct connections between devices. Use a merge file, " +
+        "or try Chrome or Safari.",
+      retry: async () => {},
+      destroy: () => {},
+    };
   }
 
   const roomId = await deriveRoomId(weddingId, secret);
@@ -145,6 +165,8 @@ export async function startPeerSync(
     const drop = () => {
       connections.delete(conn.peer);
       refreshStatus();
+      // Losing the last peer is normal (they closed the app), not an error.
+      if (connections.size === 0) diagnosis = null;
     };
     conn.on("close", drop);
     conn.on("error", drop);
@@ -167,6 +189,8 @@ export async function startPeerSync(
   // ------------------------------------------------------------------
   // claim a slot, then dial the others
   // ------------------------------------------------------------------
+  let attemptedDials = 0;
+
   const dialOthers = () => {
     if (destroyed || !peer) return;
     for (let slot = 0; slot < MAX_SLOTS; slot++) {
@@ -178,6 +202,21 @@ export async function startPeerSync(
         // An empty slot simply errors; that is expected, not a failure.
         conn.on("error", () => {});
         wire(conn);
+
+        // A peer that answers but never opens is the signature of a network
+        // that permits signalling and blocks the media path.
+        setTimeout(() => {
+          if (!destroyed && !conn.open && connections.size === 0) {
+            attemptedDials++;
+            if (attemptedDials >= MAX_SLOTS - 1 && !diagnosis) {
+              diagnose(
+                "Found the family but could not open a direct connection. This network is " +
+                  "probably blocking device-to-device traffic - try mobile data, or send a " +
+                  "merge file instead."
+              );
+            }
+          }
+        }, 12000);
       } catch {
         /* empty slot */
       }
@@ -212,9 +251,37 @@ export async function startPeerSync(
               // Someone else holds this slot - take the next one.
               candidate.destroy();
               claimSlot(slot + 1).then(resolve, reject);
-            } else {
-              reject(err);
+              return;
             }
+
+            // PeerJS error types map onto causes a family can actually act on.
+            switch (err.type) {
+              case "network":
+              case "server-error":
+              case "socket-error":
+              case "socket-closed":
+                diagnose(
+                  "Could not reach the matchmaking service. Check this device is online, " +
+                    "then try again. If it keeps failing, use a merge file instead."
+                );
+                break;
+              case "browser-incompatible":
+                diagnose(
+                  "This browser cannot make a direct connection. Try Chrome or Safari, " +
+                    "or use a merge file."
+                );
+                break;
+              case "ssl-unavailable":
+                diagnose("A secure connection could not be established on this network.");
+                break;
+              default:
+                diagnose(
+                  "Could not connect to the family. Some public and office networks block " +
+                    "direct device-to-device connections - mobile data usually works, and a " +
+                    "merge file always does."
+                );
+            }
+            reject(err);
           };
 
           candidate.once("open", onOpen);
@@ -235,9 +302,31 @@ export async function startPeerSync(
     onError?.(error instanceof Error ? error : new Error(String(error)));
   }
 
+  const retry = async () => {
+    if (destroyed) return;
+    diagnosis = null;
+    attemptedDials = 0;
+    for (const conn of connections.values()) conn.close();
+    connections.clear();
+    peer?.destroy();
+    peer = null;
+    mySlot = -1;
+    setStatus("connecting");
+    try {
+      await claimSlot(0);
+      dialOthers();
+      refreshStatus();
+    } catch (error) {
+      setStatus("error");
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
+  };
+
   return {
     status: () => status,
     peerCount: () => connections.size,
+    diagnosis: () => diagnosis,
+    retry,
     destroy: () => {
       destroyed = true;
       if (rediscoverTimer) clearInterval(rediscoverTimer);

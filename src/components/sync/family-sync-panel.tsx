@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import QRCode from "qrcode";
 import {
   Users, Wifi, WifiOff, Loader2, Copy, Check, AlertCircle, Radio, Download, Upload,
+  RefreshCw, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFamilySync } from "@/hooks/use-family-sync";
 import { createMergeFile, applyMergeFile } from "@/lib/sync/crdt";
 import { toast } from "@/hooks/use-toast";
+
+/** "just now" / "3 minutes ago" - freshness is what tells you to trust the screen. */
+function formatAgo(when: Date): string {
+  const seconds = Math.floor((Date.now() - when.getTime()) / 1000);
+  if (seconds < 15) return "just now";
+  if (seconds < 60) return `${seconds} seconds ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return when.toLocaleDateString();
+}
 
 export function FamilySyncPanel({ weddingId }: { weddingId: string }) {
   const sync = useFamilySync(weddingId);
@@ -177,6 +190,26 @@ export function FamilySyncPanel({ weddingId }: { weddingId: string }) {
                 You are in the room. Devices connect when someone else has Kalyanam open at the
                 same time. If nobody is around right now, use a merge file below.
               </p>
+            )}
+
+            {sync.lastSyncedAt && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                Last received a change {formatAgo(sync.lastSyncedAt)}
+              </p>
+            )}
+
+            {sync.diagnosis && (
+              <div className="rounded-lg border border-red-500/40 bg-red-50 dark:bg-red-900/20 p-3 space-y-2">
+                <p className="text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {sync.diagnosis}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => void sync.retry()}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Try again
+                </Button>
+              </div>
             )}
 
             <Button variant="outline" onClick={sync.disable} className="w-full">

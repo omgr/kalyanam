@@ -18,7 +18,7 @@
 import * as Y from "yjs";
 import { db } from "@/lib/db/schema";
 import { createWeddingDoc, type WeddingDoc, WEDDING_KEY } from "./doc";
-import { startBridge, type BridgeHandle } from "./bridge";
+import { startBridge, LOCAL_ORIGIN, type BridgeHandle } from "./bridge";
 import { startPeerSync, type PeerSyncHandle, type SyncStatus } from "./peer-provider";
 import { getOrCreateRoomSecret, encodeInvite, type Invite } from "./room";
 
@@ -31,6 +31,12 @@ export interface FamilySyncHandle {
   invite: () => string;
   status: () => SyncStatus;
   peerCount: () => number;
+  /** Plain-language explanation of the last failure, if there was one. */
+  diagnosis: () => string | null;
+  /** When this device last exchanged anything with a peer. */
+  lastSyncedAt: () => Date | null;
+  /** Reconnect from scratch. */
+  retry: () => Promise<void>;
   /** Bytes representing everything this device knows, for file-based merge. */
   exportUpdate: () => Uint8Array;
   /** Merge bytes from another device. Safe to apply repeatedly. */
@@ -47,6 +53,9 @@ export function getActiveSync(): FamilySyncHandle | null {
 export interface StartOptions {
   onStatus?: (status: SyncStatus, peerCount: number) => void;
   onError?: (error: Error) => void;
+  onDiagnosis?: (message: string) => void;
+  /** Fires whenever a remote update lands, so the UI can show freshness. */
+  onSynced?: (at: Date) => void;
   /** Set false to run the CRDT locally with no network at all. */
   connect?: boolean;
   secret?: string;
@@ -77,6 +86,15 @@ export async function startFamilySync(
     await bridge.applyToDexie();
   }
 
+  // Anything arriving from a peer counts as a successful exchange. Freshness
+  // is what tells a family whether they are looking at current information.
+  let lastSyncedAt: Date | null = null;
+  doc.on("update", (_update: Uint8Array, origin: unknown) => {
+    if (origin === LOCAL_ORIGIN || origin === null || origin === undefined) return;
+    lastSyncedAt = new Date();
+    options.onSynced?.(lastSyncedAt);
+  });
+
   const secret = options.secret ?? getOrCreateRoomSecret(weddingId);
 
   let peers: PeerSyncHandle | null = null;
@@ -84,6 +102,7 @@ export async function startFamilySync(
     peers = await startPeerSync(doc, weddingId, secret, {
       onStatus: options.onStatus,
       onError: options.onError,
+      onDiagnosis: options.onDiagnosis,
     });
   }
 
@@ -93,6 +112,11 @@ export async function startFamilySync(
     invite: () => encodeInvite({ weddingId, secret } as Invite),
     status: () => peers?.status() ?? "idle",
     peerCount: () => peers?.peerCount() ?? 0,
+    diagnosis: () => peers?.diagnosis() ?? null,
+    lastSyncedAt: () => lastSyncedAt,
+    retry: async () => {
+      await peers?.retry();
+    },
     exportUpdate: () => Y.encodeStateAsUpdate(doc),
     mergeUpdate: async (update: Uint8Array) => {
       Y.applyUpdate(doc, update, "merge-file");

@@ -27,8 +27,13 @@ export interface FamilySyncState {
   peerCount: number;
   invite: string | null;
   error: string | null;
+  /** Plain-language explanation of the last failure. */
+  diagnosis: string | null;
+  /** When this device last received anything from a peer. */
+  lastSyncedAt: Date | null;
   enable: () => Promise<void>;
   disable: () => void;
+  retry: () => Promise<void>;
   joinWith: (code: string) => Promise<boolean>;
 }
 
@@ -44,11 +49,14 @@ export function useFamilySync(weddingId: string | null | undefined): FamilySyncS
   const [peerCount, setPeerCount] = useState(0);
   const [invite, setInvite] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const handleRef = useRef<FamilySyncHandle | null>(null);
 
   const begin = useCallback(
     async (id: string, secret?: string) => {
       setError(null);
+      setDiagnosis(null);
       setStatus("connecting");
       try {
         const handle = await startFamilySync(id, {
@@ -56,13 +64,18 @@ export function useFamilySync(weddingId: string | null | undefined): FamilySyncS
           onStatus: (s, peers) => {
             setStatus(s);
             setPeerCount(peers);
+            if (s === "connected") setDiagnosis(null);
           },
           onError: (e) => setError(e.message),
+          onDiagnosis: setDiagnosis,
+          onSynced: setLastSyncedAt,
         });
         handleRef.current = handle;
         setInvite(handle.invite());
         setStatus(handle.status());
         setPeerCount(handle.peerCount());
+        setDiagnosis(handle.diagnosis());
+        setLastSyncedAt(handle.lastSyncedAt());
       } catch (e) {
         setStatus("error");
         setError(e instanceof Error ? e.message : "Could not start sync");
@@ -83,6 +96,8 @@ export function useFamilySync(weddingId: string | null | undefined): FamilySyncS
       setInvite(existing.invite());
       setStatus(existing.status());
       setPeerCount(existing.peerCount());
+      setDiagnosis(existing.diagnosis());
+      setLastSyncedAt(existing.lastSyncedAt());
       return;
     }
     void begin(weddingId);
@@ -103,6 +118,14 @@ export function useFamilySync(weddingId: string | null | undefined): FamilySyncS
     setStatus("idle");
     setPeerCount(0);
     setInvite(null);
+    setDiagnosis(null);
+    setLastSyncedAt(null);
+  }, []);
+
+  const retry = useCallback(async () => {
+    setDiagnosis(null);
+    setError(null);
+    await handleRef.current?.retry();
   }, []);
 
   const joinWith = useCallback(
@@ -123,5 +146,8 @@ export function useFamilySync(weddingId: string | null | undefined): FamilySyncS
     [begin]
   );
 
-  return { enabled, status, peerCount, invite, error, enable, disable, joinWith };
+  return {
+    enabled, status, peerCount, invite, error, diagnosis, lastSyncedAt,
+    enable, disable, retry, joinWith,
+  };
 }
