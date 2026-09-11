@@ -26,7 +26,7 @@ Everything described below is committed and pushed. Nothing is half-saved.
 
 ---
 
-## Family sync — implemented, one verification outstanding
+## Family sync — implemented and verified working
 
 Steps 1–3 of [`SYNC-DESIGN.md`](SYNC-DESIGN.md) are built and committed.
 
@@ -54,14 +54,16 @@ The PeerJS broker answers in ~100ms and was already a dependency.
 - In a real browser, device A enables sync, claims a room slot on the live PeerJS
   broker, and reports "Waiting for family". Invite + QR generate correctly.
 
-**Not yet verified — pick up here**
-- End-to-end: device B joins with A's invite and receives the wedding, then both
-  add a task concurrently and converge. The harness for this is
-  `scratchpad/two-devices.js`; it hung on the last run and was killed, so the
-  result is unknown — **not** a known failure, just unproven.
-- Suspected harness issues rather than app issues: two headless Chrome profiles
-  plus long `sleep`s; consider `--use-fake-ui-for-media-stream`, longer timeouts,
-  and printing `page.on('console')` from the provider.
+**Verified end to end (11 Sep)**
+- Two separate browser profiles, the live PeerJS broker, real WebRTC. Device B
+  joined from an empty database with A's invite, received all 20 ceremonies and
+  all 16 budget categories, and A's status moved to "1 device connected". Both
+  devices then added a task independently and converged on identical state.
+- Harness: `scratchpad/sync2.js`. The earlier hang was the harness, not the app:
+  Chrome hides local IPs behind mDNS (`.local`) candidates, which two browser
+  instances on one machine cannot resolve for each other. Launching with
+  `--disable-features=WebRtcHideLocalIpsWithMdns` fixes it. Real phones on real
+  networks are unaffected.
 
 **Next actions, in order**
 1. Get `two-devices.js` green (or find the real bug it exposes).

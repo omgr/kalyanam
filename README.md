@@ -19,6 +19,7 @@ The original concept for Kalyanam was **Harini's**. She owned the product defini
 research, personas, information architecture and the complete design system, and validated the
 result through usability testing and UAT against a real wedding plan.
 
+🏗️ **[Architecture](docs/ARCHITECTURE.md)** — how local-first, no-backend sync actually works (with diagrams)
 📐 **[Design System](docs/DESIGN-SYSTEM.md)** — palette, typography, components, motion, accessibility
 🙏 **[Full Credits](CREDITS.md)**
 

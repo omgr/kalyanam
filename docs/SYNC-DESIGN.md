@@ -1,8 +1,9 @@
 # Family Sync — Design
 
-**Status:** design agreed, not yet implemented
+**Status:** steps 1-3 implemented and verified device-to-device; steps 4-5 outstanding
 **Target:** working before the December 2026 wedding
-**Decision:** CRDT (Yjs) over a free public WebRTC relay, with file/QR as the offline fallback
+**Decision:** CRDT (Yjs) over PeerJS, with merge files as the offline fallback
+**Transport note:** the relay is PeerJS, not y-webrtc - every public y-webrtc signalling server proved to be dead
 
 ---
 
