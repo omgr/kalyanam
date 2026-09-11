@@ -77,7 +77,7 @@ sequenceDiagram
     A->>T: what does my address look like from outside?
     T-->>A: 82.14.x.x:51820
     B->>T: and mine?
-    T-->>B: 176.23.x.x:49precise
+    T-->>B: 176.23.x.x:49512
 
     Note over A,B: 3. The data itself
     A-->>B: direct encrypted connection
