@@ -29,6 +29,7 @@ Everything described below is committed and pushed. Nothing is half-saved.
 | Automatic area tracking | New — phones match GPS against pinned areas, no check-in needed |
 | Guest import | New — contacts picker, CSV and vCard, with dedup |
 | Invitation card | New — upload once, one tap per household via WhatsApp |
+| Printable running order | New — /print, for the priest, caterer and venue staff |
 | Sync step 4 | Done — diagnosis, retry, last-synced freshness |
 
 ---
@@ -84,6 +85,8 @@ The PeerJS broker answers in ~100ms and was already a dependency.
 ## Outstanding, not started
 
 **Before December**
+- **Add start times to the ceremonies.** The culture templates ship without them, so the
+  running order currently prints every time as a dash.
 - **November rehearsal** on two physical phones on different networks, following
   [TESTING-TWO-DEVICES.md](TESTING-TWO-DEVICES.md). Section 6 (venue wifi, backgrounding,
   an actual iPhone) has no automated equivalent.
