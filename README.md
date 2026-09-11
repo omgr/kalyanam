@@ -4,6 +4,26 @@
 
 ![Kalyanam Banner](docs/images/banner.png)
 
+**Live:** https://omgr.github.io/kalyanam/
+
+---
+
+## 👥 Team
+
+| | |
+| --- | --- |
+| **Harini Amperayani** | Product Owner · Product Designer · UX Designer · UAT — [harini-amperayani.com](https://harini-amperayani.com) · [@HariniAmperayani](https://github.com/HariniAmperayani) |
+| **Madan Gopal Ongole** | Engineering — [@omgr](https://github.com/omgr) |
+
+The original concept for Kalyanam was **Harini's**. She owned the product definition, user
+research, personas, information architecture and the complete design system, and validated the
+result through usability testing and UAT against a real wedding plan.
+
+📐 **[Design System](docs/DESIGN-SYSTEM.md)** — palette, typography, components, motion, accessibility
+🙏 **[Full Credits](CREDITS.md)**
+
+---
+
 ## ✨ Features
 
 ### 🎉 Event Management

@@ -348,7 +348,27 @@ export default function HomeClient() {
           <p className="flex items-center justify-center gap-2">
             Made with <Heart className="w-4 h-4 text-red-500" fill="currentColor" /> for beautiful beginnings
           </p>
-          <p className="text-sm mt-2">© 2024 Kalyanam. All rights reserved.</p>
+          <p className="text-sm mt-3">
+            Product &amp; design by{" "}
+            <a
+              href="https://harini-amperayani.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              Harini Amperayani
+            </a>
+            {" · "}Engineering by{" "}
+            <a
+              href="https://github.com/omgr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              Madan Gopal Ongole
+            </a>
+          </p>
+          <p className="text-sm mt-2">© {new Date().getFullYear()} Kalyanam. All rights reserved.</p>
         </div>
       </footer>
     </main>
