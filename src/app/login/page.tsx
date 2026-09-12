@@ -33,23 +33,15 @@ import { formatDate, getDaysUntil } from "@/lib/utils";
 import {
   importWeddingData,
   readFile,
-  createGuestConnection,
-  ConnectionState,
 } from "@/lib/sync";
 
-type LoginMode = 'select' | 'sync-code' | 'import' | 'family-invite';
+type LoginMode = 'select' | 'import' | 'family-invite';
 
 export default function LoginPage() {
   const router = useRouter();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [mode, setMode] = useState<LoginMode>('select');
-  
-  // Sync code state
-  const [syncCode, setSyncCode] = useState('');
-  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
-  const [syncProgress, setSyncProgress] = useState('');
-  const [syncComplete, setSyncComplete] = useState(false);
   
   // Import state
   const [isImporting, setIsImporting] = useState(false);
@@ -128,62 +120,6 @@ export default function LoginPage() {
     }
   };
 
-  // Handle P2P sync code
-  const handleSyncWithCode = async () => {
-    if (!syncCode || syncCode.length !== 6) {
-      alert('Please enter a valid 6-character sync code');
-      return;
-    }
-    
-    setSyncProgress('Connecting to host device...');
-    setConnectionState('connecting');
-    
-    try {
-      const connection = await createGuestConnection(syncCode.toUpperCase(), {
-        onStateChange: (state) => {
-          setConnectionState(state);
-          if (state === 'failed') {
-            setSyncProgress('Connection failed. Please check the code and try again.');
-          }
-        },
-        onDataReceived: async (receivedData) => {
-          if (receivedData.type === 'wedding-data') {
-            setSyncProgress('Receiving data...');
-            
-            try {
-              const result = await importWeddingData(receivedData.payload, { mode: 'new' });
-              
-              if (result.success) {
-                connection.sendData({ type: 'ack' });
-                setSyncProgress(`Imported "${result.weddingName}" successfully!`);
-                setSyncComplete(true);
-                
-                if (result.weddingId) {
-                  await activateWedding(result.weddingId);
-                }
-                
-                // Reload weddings list
-                loadWeddings();
-              } else {
-                setSyncProgress('Failed to import data: ' + result.error);
-              }
-            } catch (error) {
-              setSyncProgress('Import error: ' + (error instanceof Error ? error.message : 'Unknown'));
-            }
-          }
-        },
-        onConnected: () => {
-          setSyncProgress('Connected! Requesting data...');
-          connection.sendData({ type: 'request-data' });
-        },
-      });
-    } catch (error) {
-      console.error('Sync error:', error);
-      setSyncProgress('Failed to connect. Please try again.');
-      setConnectionState('failed');
-    }
-  };
-
   // Handle file import
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -247,10 +183,6 @@ export default function LoginPage() {
 
   const resetMode = () => {
     setMode('select');
-    setSyncCode('');
-    setConnectionState('disconnected');
-    setSyncProgress('');
-    setSyncComplete(false);
     setImportResult(null);
   };
 
@@ -289,12 +221,10 @@ export default function LoginPage() {
           <h1 className="text-3xl font-display font-bold mb-2">
             {mode === 'family-invite' && 'Join with Family Sync'}
             {mode === 'select' && 'Welcome to Kalyanam'}
-            {mode === 'sync-code' && 'Sync from Another Device'}
             {mode === 'import' && 'Import Wedding Data'}
           </h1>
           <p className="text-muted-foreground">
             {mode === 'select' && 'Continue with an existing wedding or sync from another device'}
-            {mode === 'sync-code' && 'Enter the 6-character code from the sharing device'}
             {mode === 'import' && 'Import a backup file to restore your wedding'}
           </p>
         </motion.div>
@@ -337,19 +267,6 @@ export default function LoginPage() {
                       </div>
                     </Button>
 
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start h-auto py-4"
-                      onClick={() => setMode('sync-code')}
-                    >
-                      <Wifi className="w-5 h-5 mr-3 text-blue-500" />
-                      <div className="text-left">
-                        <p className="font-medium">Enter Sync Code</p>
-                        <p className="text-xs text-muted-foreground">
-                          Get code from device that has your wedding data
-                        </p>
-                      </div>
-                    </Button>
                     
                     <Button
                       variant="outline"
@@ -476,14 +393,6 @@ export default function LoginPage() {
                       <Button
                         variant="outline"
                         className="h-auto py-3 flex-col gap-1"
-                        onClick={() => setMode('sync-code')}
-                      >
-                        <Wifi className="w-5 h-5 text-blue-500" />
-                        <span className="text-xs">Sync Code</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="h-auto py-3 flex-col gap-1"
                         onClick={() => setMode('import')}
                       >
                         <Upload className="w-5 h-5 text-green-500" />
@@ -505,137 +414,6 @@ export default function LoginPage() {
           )}
 
           {/* SYNC CODE MODE */}
-          {mode === 'sync-code' && (
-            <motion.div
-              key="sync-code"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-            >
-              <Card>
-                <CardHeader className="text-center">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-4">
-                    <Wifi className="w-8 h-8 text-blue-600" />
-                  </div>
-                  <CardTitle>Enter Sync Code</CardTitle>
-                  <CardDescription>
-                    On the device with your wedding data, go to Sync & Backup → Share from Here, then enter the code shown
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {!syncProgress && (
-                    <>
-                      {/* Important Notice */}
-                      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg p-3">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                          <div className="text-sm">
-                            <p className="font-medium text-amber-800 dark:text-amber-400">
-                              Both devices must be online
-                            </p>
-                            <p className="text-amber-700 dark:text-amber-500">
-                              The device sharing data must have the app open and waiting.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="syncCode">6-Character Code</Label>
-                        <Input
-                          id="syncCode"
-                          placeholder="ABC123"
-                          value={syncCode}
-                          onChange={(e) => setSyncCode(e.target.value.toUpperCase())}
-                          maxLength={6}
-                          className="text-center text-3xl font-mono tracking-widest h-16"
-                        />
-                      </div>
-                      
-                      <Button
-                        className="w-full"
-                        size="lg"
-                        onClick={handleSyncWithCode}
-                        disabled={syncCode.length !== 6}
-                      >
-                        <Wifi className="w-5 h-5 mr-2" />
-                        Connect & Sync
-                      </Button>
-                    </>
-                  )}
-
-                  {syncProgress && (
-                    <div className="flex flex-col items-center gap-4 py-4">
-                      <div
-                        className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                          syncComplete
-                            ? 'bg-green-100 dark:bg-green-900/30'
-                            : connectionState === 'failed'
-                            ? 'bg-red-100 dark:bg-red-900/30'
-                            : 'bg-blue-100 dark:bg-blue-900/30'
-                        }`}
-                      >
-                        {syncComplete ? (
-                          <CheckCircle className="w-8 h-8 text-green-600" />
-                        ) : connectionState === 'failed' ? (
-                          <AlertCircle className="w-8 h-8 text-red-600" />
-                        ) : (
-                          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                        )}
-                      </div>
-                      <p className="text-center text-muted-foreground">{syncProgress}</p>
-                      
-                      {syncComplete && (
-                        <Button
-                          className="w-full"
-                          onClick={() => router.push('/dashboard')}
-                        >
-                          Go to Dashboard
-                        </Button>
-                      )}
-                      
-                      {connectionState === 'failed' && (
-                        <>
-                          <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg p-3 text-left">
-                            <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                              Connection failed. This usually means:
-                            </p>
-                            <ul className="text-sm text-red-600 dark:text-red-500 mt-1 list-disc list-inside">
-                              <li>The sharing device is not online</li>
-                              <li>The app is not open on the sharing device</li>
-                              <li>The code has expired</li>
-                            </ul>
-                          </div>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setSyncProgress('');
-                              setConnectionState('disconnected');
-                            }}
-                          >
-                            Try Again
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="bg-muted/50 rounded-lg p-4 text-sm">
-                    <h4 className="font-medium mb-2">How to get the code:</h4>
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      <li>On the device with your data, open Kalyanam</li>
-                      <li>Go to <strong>Sync & Backup</strong> from the menu</li>
-                      <li>Tap <strong>"Share from Here"</strong></li>
-                      <li>Note the 6-character code shown</li>
-                      <li>Enter that code above</li>
-                    </ol>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* IMPORT MODE */}
           {mode === 'import' && (
             <motion.div
               key="import"

@@ -27,6 +27,37 @@ import { deriveRoomId, slotPeerId, MAX_SLOTS } from "./room";
 
 const MESSAGE_SYNC = 0;
 
+/**
+ * How devices find a route to each other.
+ *
+ * STUN alone is not enough. It tells each device its own public address so the
+ * two can try to punch a hole directly, which works on most home wifi - but
+ * Indian mobile networks put subscribers behind carrier-grade NAT, where that
+ * hole punch usually fails. Two phones on mobile data are exactly the case STUN
+ * cannot solve.
+ *
+ * A TURN server fixes it by relaying the traffic when a direct path cannot be
+ * found. It still cannot read anything: WebRTC payloads are encrypted
+ * end-to-end by DTLS, so a relay operator sees ciphertext. The free Open Relay
+ * project is used here as a best-effort fallback; if it is unavailable the ICE
+ * candidate is simply skipped, and the merge file remains the route that always
+ * works.
+ */
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
 export type SyncStatus =
   | "idle"
   | "connecting"
@@ -44,6 +75,8 @@ export interface PeerSyncOptions {
   peerOptions?: Record<string, unknown>;
   /** How often to re-dial empty slots, to pick up devices that join later. */
   rediscoverMs?: number;
+  /** Give up waiting for the broker after this long. */
+  connectTimeoutMs?: number;
 }
 
 export interface PeerSyncHandle {
@@ -76,7 +109,10 @@ export async function startPeerSync(
   secret: string,
   options: PeerSyncOptions = {}
 ): Promise<PeerSyncHandle> {
-  const { onStatus, onError, onDiagnosis, peerOptions, rediscoverMs = 20000 } = options;
+  const {
+    onStatus, onError, onDiagnosis, peerOptions,
+    rediscoverMs = 20000, connectTimeoutMs = 25000,
+  } = options;
 
   let status: SyncStatus = "connecting";
   let destroyed = false;
@@ -235,6 +271,7 @@ export async function startPeerSync(
         .then(({ default: PeerCtor }) => {
           const candidate = new PeerCtor(slotPeerId(roomId, slot), {
             debug: 0,
+            config: { iceServers: ICE_SERVERS },
             ...(peerOptions ?? {}),
           });
 
@@ -284,8 +321,28 @@ export async function startPeerSync(
             reject(err);
           };
 
-          candidate.once("open", onOpen);
-          candidate.on("error", onErr);
+          // Nothing here is allowed to hang indefinitely. A broker that
+          // accepts the socket and never answers used to leave the UI
+          // spinning with no explanation at all.
+          const timer = setTimeout(() => {
+            candidate.off("open", onOpen);
+            candidate.off("error", onErr);
+            candidate.destroy();
+            diagnose(
+              "The matchmaking service did not respond. Check this device is online and try " +
+                "again - if it keeps happening, send a merge file instead."
+            );
+            reject(new Error("Timed out reaching the matchmaking service"));
+          }, connectTimeoutMs);
+
+          candidate.once("open", () => {
+            clearTimeout(timer);
+            onOpen();
+          });
+          candidate.on("error", (err: Error & { type?: string }) => {
+            if (err.type !== "unavailable-id") clearTimeout(timer);
+            onErr(err);
+          });
         })
         .catch(reject);
     });
