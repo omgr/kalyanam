@@ -188,3 +188,25 @@ family*, or *N devices*.
 Turn off Family Sync on that device (Sync & Backup → **Turn off Family Sync**). It keeps its own
 copy of the wedding but stops sending and receiving. To wipe it completely, use **Logout** and
 then clear the browser's site data.
+
+---
+
+## Sending the invitation to everyone
+
+A separate question from syncing devices, and worth being straight about: **no website can
+send WhatsApp messages on your behalf.** There is no client-side API for it. The official
+Cloud API needs a business account, a server and per-message fees, and the "bulk sender" tools
+that claim otherwise are either paid gateways or unofficial automation that gets numbers
+banned. Kalyanam will not do that to your number.
+
+What it does instead, all free, on **Guests → Invitation**:
+
+| Route | Reaches | Notes |
+| --- | --- | --- |
+| **Share card to WhatsApp** | As many as you like | Opens your phone's share sheet with the card and wording attached. Pick WhatsApp, then **tick multiple chats** before sending — the multi-select is WhatsApp's own. |
+| **Broadcast list** | 256 per list | Copy the numbers, then WhatsApp → ⋮ → New broadcast. Everyone receives a normal private message, not a group. Only reaches people who have **your number saved** — usually true for family. |
+| **Email everyone** | All at once | Opens your mail app with every address in BCC, so no guest sees another's. |
+| **One at a time** | Per household | Personalised with each guest's name. Families are grouped so a household gets one invitation, not five. |
+
+The share sheet route is the one to reach for first on Android. Attaching the image is
+manual in every route, because no website is permitted to attach files to your messages.

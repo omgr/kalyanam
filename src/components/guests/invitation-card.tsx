@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Image as ImageIcon, Upload, Send, Check, Mail, MessageCircle, Info, Trash2,
+  Share2, Copy, Megaphone, Users2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,10 @@ import {
   readInvitationImage, defaultInvitationMessage, whatsAppLink, mailtoLink,
   groupForSending, isReachable, type InvitationCard as Card_,
 } from "@/lib/guests/invitation";
+import {
+  shareInvitation, canShare, broadcastBatches, bccMailtoLinks,
+  numbersForPasting, BROADCAST_LIST_LIMIT,
+} from "@/lib/guests/bulk-send";
 
 const IMAGE_KEY = "kalyanam_invitation_card";
 const MESSAGE_KEY = "kalyanam_invitation_message";
@@ -53,11 +58,18 @@ export function InvitationCard({ weddingId }: { weddingId: string }) {
     () => localStorage.getItem(MESSAGE_KEY) ?? ""
   );
   const [sent, setSent] = useState<Set<string>>(() => loadSent());
+  const [copiedBatch, setCopiedBatch] = useState<number | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const effectiveMessage = message || defaultInvitationMessage(wedding);
   const households = useMemo(() => groupForSending(guests ?? []), [guests]);
   const reachable = households.filter((h) => h.primary && isReachable(h.primary));
   const unreachable = households.length - reachable.length;
+  const batches = useMemo(() => broadcastBatches(guests ?? []), [guests]);
+  const emailLinks = useMemo(
+    () => bccMailtoLinks(guests ?? [], `${wedding?.name ?? "Wedding"} - you are invited`, effectiveMessage),
+    [guests, wedding, effectiveMessage]
+  );
 
   const upload = async (file: File) => {
     try {
@@ -175,9 +187,113 @@ export function InvitationCard({ weddingId }: { weddingId: string }) {
           </span>
         </div>
 
+        {/* ---------------- send to everyone at once ---------------- */}
+        <div className="space-y-3 rounded-lg border border-primary/40 p-3">
+          <p className="text-sm font-medium flex items-center gap-2">
+            <Users2 className="w-4 h-4 text-primary" />
+            Send to everyone at once
+          </p>
+
+          {canShare() && (
+            <div className="space-y-1.5">
+              <Button
+                className="w-full"
+                disabled={sharing}
+                onClick={async () => {
+                  setSharing(true);
+                  try {
+                    const result = await shareInvitation({
+                      message: effectiveMessage,
+                      card,
+                      title: wedding?.name,
+                    });
+                    if (result === "unsupported") {
+                      toast({
+                        variant: "destructive",
+                        title: "Sharing is not available in this browser",
+                        description: "Use a broadcast list or email below instead.",
+                      });
+                    }
+                  } catch {
+                    toast({ variant: "destructive", title: "Could not open the share sheet" });
+                  } finally {
+                    setSharing(false);
+                  }
+                }}
+              >
+                <Share2 className="w-4 h-4 mr-2" />
+                Share card to WhatsApp
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Opens your share sheet with the card and wording attached. Pick WhatsApp, then
+                <strong> tick as many chats as you like</strong> before sending - that multi-select
+                is WhatsApp&apos;s own, so there is no limit imposed by us.
+              </p>
+            </div>
+          )}
+
+          {batches.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium flex items-center gap-1.5">
+                <Megaphone className="w-3.5 h-3.5" />
+                Or make a WhatsApp broadcast list
+              </p>
+              <p className="text-xs text-muted-foreground">
+                WhatsApp → ⋮ → New broadcast. Everyone gets a normal private message, not a group.
+                Up to {BROADCAST_LIST_LIMIT} per list, and it only reaches people who have your
+                number saved - fine for family.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {batches.map((batch, i) => (
+                  <Button
+                    key={i}
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(numbersForPasting(batch));
+                      setCopiedBatch(i);
+                      setTimeout(() => setCopiedBatch(null), 2000);
+                    }}
+                  >
+                    {copiedBatch === i ? (
+                      <Check className="w-4 h-4 mr-1.5 text-green-500" />
+                    ) : (
+                      <Copy className="w-4 h-4 mr-1.5" />
+                    )}
+                    {batches.length > 1 ? `List ${i + 1}` : "Copy numbers"} ({batch.length})
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {emailLinks.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" />
+                Or email everyone at once
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {emailLinks.map((href, i) => (
+                  <a key={i} href={href}>
+                    <Button variant="outline" size="sm">
+                      <Mail className="w-4 h-4 mr-1.5" />
+                      {emailLinks.length > 1 ? `Batch ${i + 1}` : "Open email"}
+                    </Button>
+                  </a>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Everyone goes in BCC, so no guest sees another&apos;s address. Attach the card
+                before sending.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="space-y-2">
           <p className="text-sm font-medium">
-            {reachable.length} household{reachable.length === 1 ? "" : "s"} to invite
+            Or one at a time · {reachable.length} household{reachable.length === 1 ? "" : "s"}
             {unreachable > 0 && (
               <span className="font-normal text-muted-foreground">
                 {" "}· {unreachable} with no phone or email
