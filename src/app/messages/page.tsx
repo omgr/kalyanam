@@ -24,6 +24,7 @@ import { useMessages, useWedding, useFamilyMembers } from "@/lib/db/hooks";
 import { db, Message } from "@/lib/db/schema";
 import { resolveUserId, getDeviceMemberId } from "@/lib/session";
 import { toast } from "@/hooks/use-toast";
+import { useMessageAlerts } from "@/hooks/use-message-alerts";
 import { generateId, formatDate } from "@/lib/utils";
 
 export default function MessagesPage() {
@@ -51,6 +52,12 @@ export default function MessagesPage() {
   }, [router]);
 
   const wedding = useWedding(weddingId ?? undefined);
+  const alerts = useMessageAlerts(weddingId);
+
+  // Opening this screen means everything currently here has been seen.
+  useEffect(() => {
+    if (weddingId) alerts.markAllSeen();
+  }, [weddingId, alerts]);
   const messages = useMessages(weddingId ?? undefined);
   const familyMembers = useFamilyMembers(weddingId ?? undefined);
 

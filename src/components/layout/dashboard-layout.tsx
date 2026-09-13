@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clearSession } from "@/lib/session";
 import { FamilySyncIndicator } from "@/components/sync/family-sync-indicator";
+import { LogoutDialog } from "@/components/sync/logout-dialog";
 import { useTheme } from "next-themes";
 
 interface DashboardLayoutProps {
@@ -54,13 +55,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { theme, setTheme } = useTheme();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleLogout = () => {
-    clearSession();
-    router.push("/login");
-  };
+  // Signing out asks what it should mean, rather than guessing.
+  const [showLogout, setShowLogout] = useState(false);
+  const handleLogout = () => setShowLogout(true);
 
   return (
     <div className="min-h-screen bg-background">
+      {showLogout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md">
+            <LogoutDialog onCancel={() => setShowLogout(false)} />
+          </div>
+        </div>
+      )}
       {/* Desktop Sidebar */}
       <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-card hidden lg:block">
         <div className="flex h-full flex-col">

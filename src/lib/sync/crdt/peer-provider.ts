@@ -121,6 +121,7 @@ export async function startPeerSync(
   let mySlot = -1;
   let diagnosis: string | null = null;
   let reconnectAttempts = 0;
+  let lastLoggedErrorType: string | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const diagnose = (message: string) => {
@@ -175,6 +176,13 @@ export async function startPeerSync(
   const wire = (conn: DataConnection) => {
     conn.on("open", () => {
       if (destroyed) return conn.close();
+      // Belt and braces against ever peering with ourselves.
+      if (peer && conn.peer === peer.id) {
+        void logWarn("sync", "ignoring a connection to ourselves");
+        conn.close();
+        return;
+      }
+      lastLoggedErrorType = null;
       void logInfo("sync", "peer connected", { slot: conn.peer.split("-").pop(), total: connections.size + 1 });
       connections.set(conn.peer, conn);
       // Ask what they have; they will reply with whatever we are missing.
@@ -391,7 +399,12 @@ export async function startPeerSync(
             // tenth of a second after a perfectly successful start.
             if (err.type === "peer-unavailable") return;
 
-            void logWarn("sync", "broker error", { type: err.type ?? "unknown", slot });
+            // PeerJS emits "disconnected" repeatedly - seven times in a burst
+            // in one real log - and each one says the same thing.
+            if (err.type !== lastLoggedErrorType) {
+              void logWarn("sync", "broker error", { type: err.type ?? "unknown", slot });
+              lastLoggedErrorType = err.type ?? "unknown";
+            }
 
             if (err.type === "unavailable-id") {
               // Someone else holds this slot - take the next one. The timer

@@ -111,32 +111,46 @@ export async function scanQRCode(
     }
   }
 
-  // Fallback: Use canvas to capture frames
-  // Note: This is a simplified approach - for production, use a library like jsQR
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
+  // Fallback for browsers without BarcodeDetector - notably Safari, so every
+  // iPhone in the family. Previously this drew frames to a canvas and did
+  // nothing with them, so the camera opened and simply never found anything.
+  const { default: jsQR } = await import("jsqr");
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 
   const scan = () => {
     if (!isScanning) return;
-    
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
-    ctx.drawImage(videoElement, 0, 0);
-    
-    // For proper QR scanning without BarcodeDetector, 
-    // you would need to integrate jsQR or similar library
-    // This is a placeholder that shows the approach
-    
+
+    if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+      canvas.width = videoElement.videoWidth;
+      canvas.height = videoElement.videoHeight;
+      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+      try {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const found = jsQR(image.data, image.width, image.height, {
+          inversionAttempts: "dontInvert",
+        });
+        if (found?.data) {
+          onResult(found.data);
+          return;
+        }
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+
     animationFrameId = requestAnimationFrame(scan);
   };
-  
+
   scan();
-  
+
   return () => {
     isScanning = false;
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
   };
 }
+
 
 /**
  * Start camera for QR scanning

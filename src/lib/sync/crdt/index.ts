@@ -63,11 +63,37 @@ export interface StartOptions {
   secret?: string;
 }
 
-export async function startFamilySync(
+/**
+ * In-flight start, so concurrent callers share one session.
+ *
+ * Both the sync panel and the sidebar indicator ask for sync, and neither
+ * knows about the other. Checking `active` was not enough: both got past the
+ * check before either had finished starting, so one phone opened two sessions,
+ * claimed two slots in its own room and connected to itself. A real device's
+ * log shows it plainly - two "starting peer sync" entries two milliseconds
+ * apart, then slots 0 and 1 both taken by the same handset.
+ */
+let starting: { weddingId: string; promise: Promise<FamilySyncHandle> } | null = null;
+
+export function startFamilySync(
   weddingId: string,
   options: StartOptions = {}
 ): Promise<FamilySyncHandle> {
-  if (active?.weddingId === weddingId) return active;
+  if (active?.weddingId === weddingId) return Promise.resolve(active);
+  if (starting?.weddingId === weddingId) return starting.promise;
+
+  const promise = beginFamilySync(weddingId, options).finally(() => {
+    if (starting?.promise === promise) starting = null;
+  });
+
+  starting = { weddingId, promise };
+  return promise;
+}
+
+async function beginFamilySync(
+  weddingId: string,
+  options: StartOptions = {}
+): Promise<FamilySyncHandle> {
   if (active) active.stop();
 
   const weddingDoc = createWeddingDoc(weddingId);
