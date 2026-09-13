@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { db, type VenueZone } from "@/lib/db/schema";
 import { useVenues, useWedding } from "@/lib/db/hooks";
 import { generateId } from "@/lib/utils";
-import { DEFAULT_ZONE_RADIUS_M } from "@/lib/location/zones";
+import { DEFAULT_ZONE_RADIUS_M, tooCloseToDistinguish, INDISTINGUISHABLE_M } from "@/lib/location/zones";
 import { toast } from "@/hooks/use-toast";
 
 const STARTER_ZONES = [
@@ -86,6 +86,26 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
     setPlacing(zone.id);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        // Say so immediately if this pin sits on top of another. GPS cannot
+        // separate two points a few metres apart, so automatic tracking would
+        // simply never move anyone between them - which looks like a bug
+        // rather than physics.
+        const clash = tooCloseToDistinguish(
+          zones.filter((z) => z.id !== zone.id),
+          position.coords
+        );
+        if (clash) {
+          toast({
+            variant: "destructive",
+            title: `Too close to ${clash.name}`,
+            description:
+              `Pinned, but these two are under ${INDISTINGUISHABLE_M}m apart and GPS cannot tell ` +
+              `them apart, so tracking will not move you between them. Areas need roughly ` +
+              `fifteen metres of separation - which is why testing between rooms at home does ` +
+              `not work.`,
+          });
+        }
+
         await saveZones(
           zones.map((z) =>
             z.id === zone.id
@@ -99,11 +119,13 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
           )
         );
         setPlacing(null);
-        toast({
-          variant: "success",
-          title: `${zone.name} pinned`,
-          description: "Family phones will now recognise this area on their own.",
-        });
+        if (!clash) {
+          toast({
+            variant: "success",
+            title: `${zone.name} pinned`,
+            description: "Family phones will now recognise this area on their own.",
+          });
+        }
       },
       () => {
         setPlacing(null);
@@ -134,9 +156,10 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
           Venue Areas
         </CardTitle>
         <CardDescription>
-          Name the parts of {wedding?.venue || "your venue"}, then walk round once and tap the
-          crosshair in each one to pin it. After that, family phones recognise the area on their
-          own - nobody has to keep checking in. The list syncs to everyone automatically.
+          Name the parts of {wedding?.venue || "your venue"}. Then <strong>stand in each one</strong>{" "}
+          and tap its crosshair to record where it is. After that, family phones recognise the
+          area on their own. Areas need about fifteen metres between them for GPS to tell them
+          apart. The list syncs to everyone automatically.
         </CardDescription>
       </CardHeader>
 

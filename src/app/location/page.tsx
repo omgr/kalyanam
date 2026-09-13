@@ -7,7 +7,6 @@ import {
   MapPin,
   Navigation,
   Users,
-  Search,
   RefreshCw,
   Signal,
   Wifi,
@@ -27,6 +26,7 @@ import { db, FamilyMember, LocationData, LocationPing } from "@/lib/db/schema";
 import { resolveUserId, getDeviceMemberId } from "@/lib/session";
 import { WhoAreYou } from "@/components/sync/who-are-you";
 import { VenueZones } from "@/components/sync/venue-zones";
+import { WhoIsWhere } from "@/components/sync/who-is-where";
 import { AutoLocationPanel } from "@/components/sync/auto-location-panel";
 import { toast } from "@/hooks/use-toast";
 import { generateId } from "@/lib/utils";
@@ -35,7 +35,6 @@ export default function LocationPage() {
   const router = useRouter();
   const [weddingId, setWeddingId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [isSharing, setIsSharing] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<GeolocationPosition | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -152,12 +151,6 @@ export default function LocationPage() {
     }
     return () => clearInterval(interval);
   }, [isSharing, currentLocation, getCurrentLocation]);
-
-  const filteredMembers = familyMembers?.filter(
-    (member) =>
-      member.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      member.id !== familyMembers.find((m) => m.userId === userId)?.id
-  );
 
   const getTimeAgo = (date: Date) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -323,170 +316,22 @@ export default function LocationPage() {
           </CardContent>
         </Card>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search family members..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        <WhoIsWhere weddingId={weddingId} deviceMemberId={deviceMemberId} />
 
-        {/* Family Members Location */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Family Members ({filteredMembers?.length || 0})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredMembers && filteredMembers.length > 0 ? (
-                filteredMembers.map((member) => (
-                  <motion.div
-                    key={member.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 rounded-lg border hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="relative">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-lg font-bold">
-                          {member.name.charAt(0)}
-                        </div>
-                        {member.lastLocation && (
-                          <div
-                            className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
-                              getSignalStrength(member.lastLocation.accuracy) === "excellent"
-                                ? "bg-green-500"
-                                : getSignalStrength(member.lastLocation.accuracy) === "good"
-                                ? "bg-green-400"
-                                : getSignalStrength(member.lastLocation.accuracy) === "fair"
-                                ? "bg-yellow-500"
-                                : "bg-gray-400"
-                            }`}
-                          />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate">{member.name}</h3>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {member.relation}
-                        </p>
-                      </div>
-                    </div>
-
-                    {member.lastLocation ? (
-                      <div className="mt-3 space-y-2">
-                        {member.lastLocation.zone && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Building className="w-4 h-4 text-blue-500" />
-                            <span className="font-medium">{member.lastLocation.zone}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {getTimeAgo(member.lastLocation.updatedAt)}
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          {member.phone && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              asChild
-                            >
-                              <a href={`tel:${member.phone}`}>
-                                <Phone className="w-3 h-3 mr-1" />
-                                Call
-                              </a>
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => {
-                              // Open in maps
-                              const { latitude, longitude } = member.lastLocation!;
-                              window.open(
-                                `https://www.google.com/maps?q=${latitude},${longitude}`,
-                                "_blank"
-                              );
-                            }}
-                          >
-                            <Target className="w-3 h-3 mr-1" />
-                            Navigate
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-3 text-center py-3">
-                        <WifiOff className="w-6 h-6 mx-auto text-muted-foreground mb-1" />
-                        <p className="text-xs text-muted-foreground">
-                          Location not shared
-                        </p>
-                      </div>
-                    )}
-                  </motion.div>
-                ))
-              ) : (
-                <div className="col-span-full text-center py-8">
-                  <Users className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-muted-foreground">No family members found</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Active Zones Summary */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building className="w-5 h-5" />
-              Venue Zones
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {zones.map((zone) => {
-                const membersInZone = familyMembers?.filter(
-                  (m) => m.lastLocation?.zone === zone
-                );
-                return (
-                  <div
-                    key={zone}
-                    className={`p-3 rounded-lg border text-center transition-colors ${
-                      membersInZone && membersInZone.length > 0
-                        ? "bg-primary/10 border-primary"
-                        : "bg-muted/50"
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{zone}</p>
-                    <p className="text-2xl font-bold">
-                      {membersInZone?.length || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">members</p>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tips */}
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h3 className="font-semibold mb-2">📍 Location Tips</h3>
-          <ul className="text-sm text-muted-foreground space-y-1">
-            <li>• Share your location when you arrive at the venue</li>
-            <li>• Select your zone for easier indoor tracking</li>
-            <li>• Location updates every 30 seconds when sharing</li>
-            <li>• Use "Navigate" to get directions to family members</li>
-          </ul>
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="text-sm font-medium mb-2">How this works</h3>
+          <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal pl-4">
+            <li>
+              Add the parts of the venue above, then <strong>stand in each one</strong> and tap
+              its crosshair to pin where it is.
+            </li>
+            <li>Turn on automatic tracking once a few areas are pinned.</li>
+            <li>
+              Your area then updates by itself as you move. Areas need to be roughly fifteen
+              metres apart for GPS to tell them apart - rooms in a house are usually too close.
+            </li>
+            <li>Everything only runs while Kalyanam is open on screen.</li>
+          </ol>
         </div>
       </div>
     </DashboardLayout>

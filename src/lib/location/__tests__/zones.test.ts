@@ -1,6 +1,7 @@
 import {
   distanceMetres, matchZone, shouldSwitchZone, locatedZones,
   describeAccuracy, DEFAULT_ZONE_RADIUS_M,
+  switchMargin, MAX_SWITCH_MARGIN_M, tooCloseToDistinguish,
 } from "../zones";
 import type { VenueZone } from "@/lib/db/schema";
 
@@ -117,5 +118,57 @@ describe("describeAccuracy", () => {
 describe("the default radius", () => {
   it("is generous enough for a real venue", () => {
     expect(DEFAULT_ZONE_RADIUS_M).toBeGreaterThanOrEqual(15);
+  });
+});
+
+describe("switchMargin", () => {
+  it("stays small when areas are close, so a short walk still registers", () => {
+    // The failure a real test at home hit: rooms about six metres apart never
+    // swapped, because the margin was a flat ten metres.
+    expect(switchMargin(6)).toBe(2);
+  });
+
+  it("grows with distance, to stop flapping across a big venue", () => {
+    expect(switchMargin(40)).toBe(10);
+  });
+
+  it("never exceeds the cap", () => {
+    expect(switchMargin(1000)).toBe(MAX_SWITCH_MARGIN_M);
+  });
+});
+
+describe("shouldSwitchZone with close-together areas", () => {
+  const at = (name: string, distance: number) =>
+    ({ zone: { id: name, name }, distance, confidence: 1 });
+
+  it("moves you between two rooms six metres apart", () => {
+    // Standing in the kitchen: kitchen 1m away, lounge 6m away.
+    expect(shouldSwitchZone("Main Hall", at("Mandapam", 1), 6)).toBe(true);
+  });
+
+  it("still refuses to flap when the difference is noise", () => {
+    expect(shouldSwitchZone("Main Hall", at("Mandapam", 19), 20)).toBe(false);
+  });
+
+  it("switches across a venue when genuinely closer", () => {
+    expect(shouldSwitchZone("Main Hall", at("Dining Hall", 5), 45)).toBe(true);
+  });
+});
+
+describe("tooCloseToDistinguish", () => {
+  const HALL2: VenueZone = { id: "a", name: "Lounge", latitude: 17.44, longitude: 78.4 };
+
+  it("flags a pin a few metres from an existing one", () => {
+    // 17.44004 is roughly 4m north - a different room in a house.
+    const near = tooCloseToDistinguish([HALL2], { latitude: 17.44004, longitude: 78.4 });
+    expect(near?.name).toBe("Lounge");
+  });
+
+  it("accepts a pin far enough away to be told apart", () => {
+    expect(tooCloseToDistinguish([HALL2], { latitude: 17.4404, longitude: 78.4 })).toBeNull();
+  });
+
+  it("ignores areas that have never been pinned", () => {
+    expect(tooCloseToDistinguish([{ id: "b", name: "Garden" }], { latitude: 17.44, longitude: 78.4 })).toBeNull();
   });
 });

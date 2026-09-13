@@ -29,8 +29,28 @@ export const DEFAULT_ZONE_RADIUS_M = 25;
  */
 export const MAX_MATCH_DISTANCE_M = 120;
 
-/** A new area must beat the current one by this much before we report a move. */
-export const SWITCH_MARGIN_M = 10;
+/**
+ * How much closer a new area must be before a move is reported.
+ *
+ * A fixed margin does not work: at ten metres it stops any two areas closer
+ * than that from ever swapping, which is most of a house and plenty of a
+ * venue - a dining hall and a mandapam thirty feet apart would never register.
+ * Scaling with the current distance keeps the anti-flapping behaviour where
+ * areas are far apart, without freezing where they are close.
+ */
+export const MIN_SWITCH_MARGIN_M = 2;
+export const MAX_SWITCH_MARGIN_M = 10;
+export const SWITCH_MARGIN_FRACTION = 0.3;
+
+export function switchMargin(currentDistance: number): number {
+  return Math.min(
+    MAX_SWITCH_MARGIN_M,
+    Math.max(MIN_SWITCH_MARGIN_M, currentDistance * SWITCH_MARGIN_FRACTION)
+  );
+}
+
+/** Two areas pinned closer than this cannot reliably be told apart by GPS. */
+export const INDISTINGUISHABLE_M = 12;
 
 export interface Coords {
   latitude: number;
@@ -114,7 +134,28 @@ export function shouldSwitchZone(
   if (!currentZoneName) return true;
   if (next.zone.name === currentZoneName) return false;
   if (currentDistance === undefined) return true;
-  return next.distance < currentDistance - SWITCH_MARGIN_M;
+  return next.distance < currentDistance - switchMargin(currentDistance);
+}
+
+/**
+ * Pinned areas that sit too close together to be distinguished.
+ *
+ * Worth saying out loud when someone pins them: GPS cannot separate two points
+ * a few metres apart, so the app would simply never move anyone between them,
+ * and it would look broken rather than physically impossible.
+ */
+export function tooCloseToDistinguish(
+  zones: VenueZone[] | undefined,
+  candidate: Coords
+): VenueZone | null {
+  for (const zone of locatedZones(zones)) {
+    const distance = distanceMetres(candidate, {
+      latitude: zone.latitude as number,
+      longitude: zone.longitude as number,
+    });
+    if (distance < INDISTINGUISHABLE_M) return zone;
+  }
+  return null;
 }
 
 /** Plain language, so nobody reads "38" and assumes it is precise. */
