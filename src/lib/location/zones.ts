@@ -49,8 +49,50 @@ export function switchMargin(currentDistance: number): number {
   );
 }
 
-/** Two areas pinned closer than this cannot reliably be told apart by GPS. */
-export const INDISTINGUISHABLE_M = 12;
+/**
+ * How far apart two areas must be before GPS can reliably tell them apart.
+ *
+ * This is not a preference, it is arithmetic. A reading accurate to ±12m
+ * lands somewhere in a 12m circle around where you actually are, so two
+ * points 5m apart are picked correctly about 62% of the time - barely better
+ * than a coin toss, and the app would flicker between them rather than track
+ * you. At 25m separation the same reading is right essentially always.
+ *
+ * The default is deliberately conservative. It can be lowered for testing at
+ * home, where nobody has 25m of separation to play with, as long as the
+ * consequence is stated rather than hidden.
+ */
+export const DEFAULT_MIN_SEPARATION_M = 15;
+export const LOWEST_MIN_SEPARATION_M = 5;
+
+const SEPARATION_KEY = "kalyanam_min_area_separation";
+
+export function getMinSeparation(): number {
+  if (typeof window === "undefined") return DEFAULT_MIN_SEPARATION_M;
+  const stored = Number(localStorage.getItem(SEPARATION_KEY));
+  return Number.isFinite(stored) && stored >= LOWEST_MIN_SEPARATION_M
+    ? stored
+    : DEFAULT_MIN_SEPARATION_M;
+}
+
+export function setMinSeparation(metres: number): void {
+  localStorage.setItem(
+    SEPARATION_KEY,
+    String(Math.max(LOWEST_MIN_SEPARATION_M, Math.round(metres)))
+  );
+}
+
+/**
+ * Roughly how often the nearest-area calculation picks correctly, given a
+ * separation and a measured accuracy. Used to tell someone what they are
+ * actually getting rather than leaving them to discover it by walking about.
+ */
+export function expectedReliability(separation: number, accuracy: number): number {
+  if (accuracy <= 0) return 1;
+  const ratio = separation / (2 * accuracy);
+  // Empirical fit to the simulation: saturates once separation passes ~2x error.
+  return Math.max(0.5, Math.min(1, 0.5 + ratio * 0.75));
+}
 
 export interface Coords {
   latitude: number;
@@ -153,7 +195,7 @@ export function tooCloseToDistinguish(
       latitude: zone.latitude as number,
       longitude: zone.longitude as number,
     });
-    if (distance < INDISTINGUISHABLE_M) return zone;
+    if (distance < getMinSeparation()) return zone;
   }
   return null;
 }
@@ -165,4 +207,91 @@ export function describeAccuracy(accuracy: number | undefined): string {
   if (accuracy < 30) return "good";
   if (accuracy < 100) return "fair";
   return "weak";
+}
+
+
+/**
+ * Take several readings and combine them into one pin.
+ *
+ * A single fix carries the full measurement error. Random error averages out
+ * across samples, so a handful taken a second apart lands materially closer to
+ * the truth - which is the cheapest way to make close-together areas
+ * distinguishable at all. Samples are weighted by their own reported accuracy,
+ * so a poor one does not drag the result around.
+ */
+export function averagePositions(
+  samples: Array<{ latitude: number; longitude: number; accuracy?: number }>
+): { latitude: number; longitude: number; accuracy: number } | null {
+  if (samples.length === 0) return null;
+
+  let weightSum = 0;
+  let lat = 0;
+  let lon = 0;
+
+  for (const sample of samples) {
+    // Inverse-variance weighting: a ±5m fix counts far more than a ±50m one.
+    const accuracy = Math.max(1, sample.accuracy ?? 50);
+    const weight = 1 / (accuracy * accuracy);
+    weightSum += weight;
+    lat += sample.latitude * weight;
+    lon += sample.longitude * weight;
+  }
+
+  return {
+    latitude: lat / weightSum,
+    longitude: lon / weightSum,
+    // Averaging n independent samples reduces the error by roughly sqrt(n).
+    accuracy:
+      Math.min(...samples.map((s) => s.accuracy ?? 50)) / Math.sqrt(samples.length),
+  };
+}
+
+/** Collect readings for a few seconds, then average them into one position. */
+export function samplePosition(
+  options: { samples?: number; timeoutMs?: number } = {}
+): Promise<{ latitude: number; longitude: number; accuracy: number; used: number }> {
+  const wanted = options.samples ?? 6;
+  const timeoutMs = options.timeoutMs ?? 12000;
+
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      reject(new Error("This browser cannot read a location."));
+      return;
+    }
+
+    const collected: Array<{ latitude: number; longitude: number; accuracy?: number }> = [];
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timer);
+
+      const averaged = averagePositions(collected);
+      if (!averaged) {
+        reject(new Error("Could not get a location fix."));
+        return;
+      }
+      resolve({ ...averaged, used: collected.length });
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        collected.push({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+        if (collected.length >= wanted) finish();
+      },
+      () => {
+        // Keep waiting - a single failed reading is not the end of the attempt.
+        if (collected.length > 0) finish();
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs }
+    );
+
+    const timer = setTimeout(finish, timeoutMs);
+  });
 }

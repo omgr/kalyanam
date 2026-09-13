@@ -2,6 +2,8 @@ import {
   distanceMetres, matchZone, shouldSwitchZone, locatedZones,
   describeAccuracy, DEFAULT_ZONE_RADIUS_M,
   switchMargin, MAX_SWITCH_MARGIN_M, tooCloseToDistinguish,
+  averagePositions, getMinSeparation, setMinSeparation, expectedReliability,
+  DEFAULT_MIN_SEPARATION_M, LOWEST_MIN_SEPARATION_M,
 } from "../zones";
 import type { VenueZone } from "@/lib/db/schema";
 
@@ -170,5 +172,63 @@ describe("tooCloseToDistinguish", () => {
 
   it("ignores areas that have never been pinned", () => {
     expect(tooCloseToDistinguish([{ id: "b", name: "Garden" }], { latitude: 17.44, longitude: 78.4 })).toBeNull();
+  });
+});
+
+describe("averagePositions", () => {
+  it("averages several readings of the same spot", () => {
+    const avg = averagePositions([
+      { latitude: 17.4400, longitude: 78.4000, accuracy: 10 },
+      { latitude: 17.4402, longitude: 78.4000, accuracy: 10 },
+    ])!;
+    expect(avg.latitude).toBeCloseTo(17.4401, 4);
+  });
+
+  it("trusts a precise reading far more than a vague one", () => {
+    // Inverse-variance weighting: a ±5m fix should dominate a ±50m one.
+    const avg = averagePositions([
+      { latitude: 17.4400, longitude: 78.4, accuracy: 5 },
+      { latitude: 17.4500, longitude: 78.4, accuracy: 50 },
+    ])!;
+    expect(avg.latitude).toBeLessThan(17.4405);
+  });
+
+  it("reports a better accuracy than any single reading", () => {
+    const avg = averagePositions(
+      Array.from({ length: 9 }, () => ({ latitude: 17.44, longitude: 78.4, accuracy: 12 }))
+    )!;
+    expect(avg.accuracy).toBeCloseTo(4, 0); // 12 / sqrt(9)
+  });
+
+  it("returns nothing when there is nothing to average", () => {
+    expect(averagePositions([])).toBeNull();
+  });
+});
+
+describe("minimum separation setting", () => {
+  afterEach(() => localStorage.clear());
+
+  it("defaults to the conservative value", () => {
+    expect(getMinSeparation()).toBe(DEFAULT_MIN_SEPARATION_M);
+  });
+
+  it("can be lowered for testing at home", () => {
+    setMinSeparation(5);
+    expect(getMinSeparation()).toBe(5);
+  });
+
+  it("refuses a value below the floor", () => {
+    setMinSeparation(1);
+    expect(getMinSeparation()).toBe(LOWEST_MIN_SEPARATION_M);
+  });
+});
+
+describe("expectedReliability", () => {
+  it("is near a coin toss when areas are closer than the error", () => {
+    expect(expectedReliability(5, 12)).toBeLessThan(0.7);
+  });
+
+  it("is dependable once separation clears twice the error", () => {
+    expect(expectedReliability(30, 12)).toBeGreaterThan(0.9);
   });
 });

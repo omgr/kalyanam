@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Building2, Plus, Trash2, MapPin, Crosshair, Check, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Plus, Trash2, MapPin, Crosshair, Check, Loader2, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db, type VenueZone } from "@/lib/db/schema";
 import { useVenues, useWedding } from "@/lib/db/hooks";
 import { generateId } from "@/lib/utils";
-import { DEFAULT_ZONE_RADIUS_M, tooCloseToDistinguish, INDISTINGUISHABLE_M } from "@/lib/location/zones";
+import {
+  DEFAULT_ZONE_RADIUS_M, tooCloseToDistinguish, getMinSeparation, setMinSeparation,
+  samplePosition, expectedReliability, LOWEST_MIN_SEPARATION_M, DEFAULT_MIN_SEPARATION_M,
+} from "@/lib/location/zones";
 import { toast } from "@/hooks/use-toast";
 
 const STARTER_ZONES = [
@@ -29,6 +33,10 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
   const wedding = useWedding(weddingId);
   const [newZone, setNewZone] = useState("");
   const [placing, setPlacing] = useState<string | null>(null);
+  const [separation, setSeparation] = useState(DEFAULT_MIN_SEPARATION_M);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => setSeparation(getMinSeparation()), []);
   const venue = venues?.[0];
 
   const saveZones = async (zones: VenueZone[]) => {
@@ -84,59 +92,55 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
       return;
     }
     setPlacing(zone.id);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        // Say so immediately if this pin sits on top of another. GPS cannot
-        // separate two points a few metres apart, so automatic tracking would
-        // simply never move anyone between them - which looks like a bug
-        // rather than physics.
-        const clash = tooCloseToDistinguish(
-          zones.filter((z) => z.id !== zone.id),
-          position.coords
-        );
-        if (clash) {
-          toast({
-            variant: "destructive",
-            title: `Too close to ${clash.name}`,
-            description:
-              `Pinned, but these two are under ${INDISTINGUISHABLE_M}m apart and GPS cannot tell ` +
-              `them apart, so tracking will not move you between them. Areas need roughly ` +
-              `fifteen metres of separation - which is why testing between rooms at home does ` +
-              `not work.`,
-          });
-        }
+    try {
+      // Several readings averaged, rather than one. A single fix carries the
+      // full error; averaging a handful lands materially closer and is what
+      // makes close-together areas separable at all.
+      const fix = await samplePosition({ samples: 6 });
 
-        await saveZones(
-          zones.map((z) =>
-            z.id === zone.id
-              ? {
-                  ...z,
-                  latitude: position.coords.latitude,
-                  longitude: position.coords.longitude,
-                  radius: z.radius ?? DEFAULT_ZONE_RADIUS_M,
-                }
-              : z
-          )
-        );
-        setPlacing(null);
-        if (!clash) {
-          toast({
-            variant: "success",
-            title: `${zone.name} pinned`,
-            description: "Family phones will now recognise this area on their own.",
-          });
-        }
-      },
-      () => {
-        setPlacing(null);
+      const clash = tooCloseToDistinguish(
+        zones.filter((z) => z.id !== zone.id),
+        fix
+      );
+
+      await saveZones(
+        zones.map((z) =>
+          z.id === zone.id
+            ? {
+                ...z,
+                latitude: fix.latitude,
+                longitude: fix.longitude,
+                radius: z.radius ?? DEFAULT_ZONE_RADIUS_M,
+              }
+            : z
+        )
+      );
+      setPlacing(null);
+
+      if (clash) {
         toast({
           variant: "destructive",
-          title: "Could not get a location fix",
-          description: "Step outside or near a window and try again.",
+          title: `Too close to ${clash.name}`,
+          description:
+            `Pinned, but these two are under ${getMinSeparation()}m apart, so tracking will ` +
+            `flicker between them rather than follow you. Lower the minimum below if you are ` +
+            `testing at home.`,
         });
-      },
-      { enableHighAccuracy: true, timeout: 20000 }
-    );
+      } else {
+        toast({
+          variant: "success",
+          title: `${zone.name} pinned`,
+          description: `Averaged ${fix.used} readings, ±${Math.round(fix.accuracy)}m.`,
+        });
+      }
+    } catch (error) {
+      setPlacing(null);
+      toast({
+        variant: "destructive",
+        title: "Could not get a location fix",
+        description: error instanceof Error ? error.message : "Step outside and try again.",
+      });
+    }
   };
 
   const addStarters = async () => {
@@ -223,6 +227,52 @@ export function VenueZones({ weddingId }: { weddingId: string }) {
             pinned. Unpinned areas can still be chosen by hand.
           </p>
         )}
+
+        <div className="border-t border-border pt-3">
+          <button
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            {showAdvanced ? "Hide" : "Testing options"}
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 space-y-2">
+              <Label htmlFor="separation" className="text-sm">
+                Minimum distance between areas: {separation}m
+              </Label>
+              <input
+                id="separation"
+                type="range"
+                min={LOWEST_MIN_SEPARATION_M}
+                max={40}
+                step={1}
+                value={separation}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setSeparation(next);
+                  setMinSeparation(next);
+                }}
+                className="w-full accent-current"
+              />
+              <p className="text-xs text-muted-foreground">
+                With a typical ±12m phone fix, areas {separation}m apart are picked correctly
+                about {Math.round(expectedReliability(separation, 12) * 100)}% of the time.
+                {separation < DEFAULT_MIN_SEPARATION_M && (
+                  <>
+                    {" "}
+                    <strong>
+                      Below {DEFAULT_MIN_SEPARATION_M}m it will flicker between areas rather than
+                      follow you
+                    </strong>{" "}
+                    - useful for trying it out at home, not for the day itself.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
 
         <div className="flex gap-2">
           <Input
