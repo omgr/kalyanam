@@ -21,6 +21,7 @@ result through usability testing and UAT against a real wedding plan.
 
 🏗️ **[Architecture](docs/ARCHITECTURE.md)** — how local-first, no-backend sync actually works (with diagrams)
 📱 **[Connecting Devices](docs/CONNECTING-DEVICES.md)** — get the family in sync, and who can join
+🔔 **[Notifications](docs/NOTIFICATIONS.md)** — what is possible without a server, and why
 🧭 **[Messages & Finding Family](docs/FINDING-FAMILY.md)** — venue areas and the wedding-day features
 🧪 **[Testing on Two Devices](docs/TESTING-TWO-DEVICES.md)** — the November rehearsal script
 📐 **[Design System](docs/DESIGN-SYSTEM.md)** — palette, typography, components, motion, accessibility
