@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,12 +23,14 @@ import {
   Moon,
   Sun,
   Share2,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clearSession } from "@/lib/session";
 import { FamilySyncIndicator } from "@/components/sync/family-sync-indicator";
 import { LogoutDialog } from "@/components/sync/logout-dialog";
+import { useMessageAlerts } from "@/hooks/use-message-alerts";
 import { useTheme } from "next-themes";
 
 interface DashboardLayoutProps {
@@ -41,12 +43,13 @@ const navItems = [
   { href: "/guests", icon: Users, label: "Guests" },
   { href: "/tasks", icon: CheckSquare, label: "Tasks" },
   { href: "/budget", icon: Wallet, label: "Budget" },
+  { href: "/messages", icon: MessageSquare, label: "Chat" },
   { href: "/vendors", icon: Store, label: "Vendors" },
   { href: "/family", icon: Users, label: "Family" },
-  { href: "/messages", icon: MessageSquare, label: "Messages" },
   { href: "/location", icon: MapPin, label: "Location" },
   { href: "/reminders", icon: Bell, label: "Reminders" },
   { href: "/sync", icon: Share2, label: "Sync & Backup" },
+  { href: "/diagnostics", icon: FileText, label: "Diagnostics" },
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -54,6 +57,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const [weddingId, setWeddingId] = useState<string | null>(null);
+  useEffect(() => setWeddingId(localStorage.getItem("kalyanam_wedding_id")), []);
+  const { unreadCount } = useMessageAlerts(weddingId);
 
   // Signing out asks what it should mean, rather than guessing.
   const [showLogout, setShowLogout] = useState(false);
@@ -94,7 +101,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       )}
                     >
                       <item.icon className="h-5 w-5" />
-                      {item.label}
+                      <span className="flex-1">{item.label}</span>
+                      {item.href === "/messages" && unreadCount > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {unreadCount}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );
@@ -266,7 +278,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             { href: "/events", icon: Calendar, label: "Events" },
             { href: "/guests", icon: Users, label: "Guests" },
             { href: "/tasks", icon: CheckSquare, label: "Tasks" },
-            { href: "/budget", icon: Wallet, label: "Budget" },
+            { href: "/messages", icon: MessageSquare, label: "Chat" },
           ].map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -280,7 +292,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                <item.icon className="h-5 w-5" />
+                <span className="relative">
+                  <item.icon className="h-5 w-5" />
+                  {item.href === "/messages" && unreadCount > 0 && (
+                    <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] font-medium">{item.label}</span>
               </Link>
             );

@@ -30,6 +30,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useEvents, useEvent, useFamilyMembers, useWedding } from "@/lib/db/hooks";
 import { db, WeddingEvent, ChecklistItem } from "@/lib/db/schema";
 import { formatDate, formatTime, generateId } from "@/lib/utils";
+import { logInfo } from "@/lib/diagnostics/logger";
 
 type EventRoute = { mode: 'list' | 'detail' | 'edit' | 'new'; eventId?: string };
 
@@ -239,6 +240,7 @@ function EventDetail({ weddingId, eventId }: { weddingId: string; eventId: strin
 
   const handleDeleteEvent = async () => {
     if (confirm("Are you sure you want to delete this event?")) {
+      void logInfo("events", "deleted an event");
       await db.events.delete(eventId);
       router.push("/events");
     }
@@ -436,10 +438,12 @@ function EventForm({ weddingId, eventId }: { weddingId: string; eventId?: string
       };
       if (eventId) {
         await db.events.update(eventId, eventData);
+        void logInfo("events", "edited an event");
         router.push(eventHref.detail(eventId));
       } else {
         const newId = generateId();
         await db.events.add({ ...eventData, id: newId, weddingId, status: "scheduled", createdAt: new Date() } as WeddingEvent);
+        void logInfo("events", "created an event", { hasChecklist: checklist.length > 0 });
         router.push(eventHref.detail(newId));
       }
     } catch (error) {

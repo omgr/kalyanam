@@ -30,8 +30,14 @@ export function setDeviceName(name: string): void {
   else localStorage.removeItem(DEVICE_NAME_KEY);
 }
 
-/** Days of history to keep. Older days are pruned on startup. */
-export const RETENTION_DAYS = 7;
+/**
+ * Days of history to keep.
+ *
+ * A fresh log starts each day and old ones are dropped, so this cannot grow
+ * without bound on a phone that is short of space. Three days covers "it
+ * happened yesterday" without hoarding.
+ */
+export const RETENTION_DAYS = 3;
 
 /** Per-day cap, so a runaway loop cannot fill the device. */
 export const MAX_ENTRIES_PER_DAY = 2000;
@@ -145,6 +151,35 @@ export async function availableDays(): Promise<string[]> {
 
 export async function entriesFor(day: string): Promise<LogEntry[]> {
   return db.logs.where("day").equals(day).sortBy("at");
+}
+
+/** Entries per feature area for a day, for the at-a-glance summary. */
+export async function areaCounts(
+  day: string
+): Promise<Record<string, { total: number; problems: number }>> {
+  const entries = await entriesFor(day);
+  const counts: Record<string, { total: number; problems: number }> = {};
+
+  for (const entry of entries) {
+    const bucket = (counts[entry.area] ??= { total: 0, problems: 0 });
+    bucket.total++;
+    if (entry.level !== "info") bucket.problems++;
+  }
+  return counts;
+}
+
+/** Rough size of the stored log, so the cost of keeping it is visible. */
+export async function storageUsedKb(): Promise<number> {
+  try {
+    const all = await db.logs.toArray();
+    const bytes = all.reduce(
+      (sum, e) => sum + e.message.length + JSON.stringify(e.detail ?? {}).length + 80,
+      0
+    );
+    return Math.round(bytes / 1024);
+  } catch {
+    return 0;
+  }
 }
 
 export async function clearLogs(): Promise<void> {

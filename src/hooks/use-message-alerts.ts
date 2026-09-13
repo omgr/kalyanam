@@ -51,6 +51,17 @@ export function useMessageAlerts(weddingId: string | null | undefined) {
     (m) => new Date(m.createdAt).getTime() > lastSeen.current
   );
 
+  // The installed app can carry an unread count on its icon, which survives
+  // the page being backgrounded in a way a notification does not.
+  useEffect(() => {
+    const nav = navigator as Navigator & {
+      setAppBadge?: (n?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    if (!nav.setAppBadge) return;
+    void (unread.length > 0 ? nav.setAppBadge(unread.length) : nav.clearAppBadge?.());
+  }, [unread.length]);
+
   useEffect(() => {
     if (permission !== "granted" || !messages) return;
 
@@ -68,6 +79,23 @@ export function useMessageAlerts(weddingId: string | null | undefined) {
               : "Message";
 
       try {
+        // Prefer the service worker: its notifications survive the page being
+        // backgrounded, where a page-owned one can be dropped.
+        void navigator.serviceWorker?.ready
+          ?.then((registration) =>
+            registration.showNotification(`Kalyanam - ${label}`, {
+              body: message.subject || message.content.slice(0, 120),
+              tag: message.id,
+              badge: "/kalyanam/icons/icon.svg",
+              icon: "/kalyanam/icons/icon.svg",
+              requireInteraction: message.priority === "urgent",
+              data: { url: "/kalyanam/messages" },
+            })
+          )
+          .catch(() => {
+            /* fall through to the page-owned notification below */
+          });
+
         const notification = new Notification(`Kalyanam - ${label}`, {
           body: message.subject || message.content.slice(0, 120),
           tag: message.id,
