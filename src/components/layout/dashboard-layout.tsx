@@ -264,14 +264,24 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Main Content */}
       <main className="lg:pl-64">
         <div className="min-h-screen pt-16 lg:pt-0">
-          <div className="container mx-auto px-4 py-6 lg:py-8 max-w-7xl">
+          {/*
+            The bottom bar is fixed, so content must be padded out from under
+            it. This belongs here rather than on each page: every screen had to
+            remember `pb-20` and several did not, which left their last row of
+            controls hidden behind the bar and untappable. Doing it once means a
+            new page cannot get it wrong.
+
+            The extra safe-area inset is for phones with a home indicator,
+            where the bar itself sits higher than its own height suggests.
+          */}
+          <div className="container mx-auto px-4 py-6 lg:py-8 max-w-7xl pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-8">
             {children}
           </div>
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 lg:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="flex items-center justify-around px-2 py-2">
           {[
             { href: "/dashboard", icon: LayoutDashboard, label: "Home" },

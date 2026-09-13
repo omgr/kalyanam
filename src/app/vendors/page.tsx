@@ -223,7 +223,7 @@ export default function VendorsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 pb-20 lg:pb-0">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>

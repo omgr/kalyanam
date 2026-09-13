@@ -159,7 +159,7 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 pb-20 lg:pb-0 max-w-3xl">
+      <div className="space-y-6 max-w-3xl">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-display font-bold flex items-center gap-2">

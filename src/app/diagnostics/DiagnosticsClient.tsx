@@ -33,7 +33,7 @@ export default function DiagnosticsClient() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto space-y-6 pb-20 lg:pb-0">
+      <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-display font-bold flex items-center gap-2">
             <FileText className="w-8 h-8 text-primary" />

@@ -139,7 +139,7 @@ export default function ChatClient() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 pb-20 lg:pb-0">
+      <div className="space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h1 className="text-3xl font-display font-bold flex items-center gap-2">
             <MessageSquare className="w-8 h-8 text-primary" />

@@ -114,7 +114,7 @@ export default function SyncPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto space-y-6 pb-20 lg:pb-0">
+      <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <Button variant="ghost" className="mb-2 -ml-2" onClick={() => router.back()}>
             <ArrowLeft className="w-4 h-4 mr-2" />

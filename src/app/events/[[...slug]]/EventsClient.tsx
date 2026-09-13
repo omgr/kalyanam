@@ -139,7 +139,7 @@ function EventsList({ weddingId }: { weddingId: string }) {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 pb-20 lg:pb-0">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-display font-bold">Events & Ceremonies</h1>
@@ -294,7 +294,7 @@ function EventDetail({ weddingId, eventId }: { weddingId: string; eventId: strin
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 pb-20 lg:pb-0">
+      <div className="space-y-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <Button variant="ghost" className="mb-2 -ml-2" onClick={() => router.push("/events")}>
@@ -456,7 +456,7 @@ function EventForm({ weddingId, eventId }: { weddingId: string; eventId?: string
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto space-y-6 pb-20 lg:pb-0">
+      <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <Button variant="ghost" className="mb-2 -ml-2" onClick={() => eventId ? router.push(eventHref.detail(eventId)) : router.push("/events")}>
             <ArrowLeft className="w-4 h-4 mr-2" />{eventId ? "Back to Event" : "Back to Events"}
