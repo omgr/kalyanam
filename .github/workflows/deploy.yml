@@ -16,6 +16,13 @@ permissions:
   id-token: write
 
 # Let a running deploy finish rather than cancelling it half-published.
+#
+# The cost of this setting is that pushes landing seconds apart queue behind
+# each other, and GitHub has been seen to orphan a run in that state - stuck
+# "queued" with no jobs, refusing both cancel and force-cancel. It blocks
+# nothing (a later run deploys fine and supersedes it), but it is untidy and
+# cannot be cleared through the API. Avoid it by letting one deploy finish
+# before pushing again, rather than by cancelling live deploys.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -23,6 +30,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # A hung job should fail and free the queue rather than sit there.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +61,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
