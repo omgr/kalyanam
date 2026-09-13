@@ -120,6 +120,8 @@ export async function startPeerSync(
   let peer: Peer | null = null;
   let mySlot = -1;
   let diagnosis: string | null = null;
+  let reconnectAttempts = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const diagnose = (message: string) => {
     // Repeating the same explanation on every retry fills the log and hides
@@ -289,6 +291,44 @@ export async function startPeerSync(
   };
 
   /**
+   * Re-establish the broker socket after a drop.
+   *
+   * `peer.reconnect()` reuses the same id, so the slot is kept and family
+   * already connected are unaffected - existing data channels survive a broker
+   * outage, since the broker is only ever an introducer.
+   */
+  const scheduleReconnect = () => {
+    if (destroyed || reconnectTimer) return;
+
+    const delay = Math.min(2000 * 2 ** Math.min(reconnectAttempts, 5), 60_000);
+    reconnectAttempts++;
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (destroyed || !peer) return;
+
+      if (peer.destroyed) {
+        void logWarn("sync", "peer was destroyed; starting over");
+        void retry();
+        return;
+      }
+
+      if (peer.disconnected) {
+        try {
+          peer.reconnect();
+          void logInfo("sync", "reconnecting to the broker", { attempt: reconnectAttempts });
+        } catch {
+          void retry();
+        }
+        // If it is still down next time round, try again, more slowly.
+        setTimeout(() => {
+          if (!destroyed && peer?.disconnected) scheduleReconnect();
+        }, 5000);
+      }
+    }, delay);
+  };
+
+  /**
    * Look again, less and less often. A family member opening the app later is
    * worth waiting for; hammering a shared broker while nobody is there is not.
    */
@@ -324,7 +364,22 @@ export async function startPeerSync(
             candidate.off("error", onErr);
             peer = candidate;
             mySlot = slot;
+            reconnectAttempts = 0;
             candidate.on("connection", (conn) => wire(conn));
+
+            /**
+             * The socket to the broker drops, and on a mobile network it drops
+             * often - a real phone's log showed four drops in twenty minutes.
+             * Nothing here used to re-establish it, so after the first drop the
+             * device stayed invisible to anyone trying to reach it while
+             * looking, from the outside, exactly like it was still waiting.
+             */
+            candidate.on("disconnected", () => {
+              if (destroyed) return;
+              void logWarn("sync", "broker socket dropped", { attempt: reconnectAttempts + 1 });
+              scheduleReconnect();
+            });
+
             resolve();
           };
 
@@ -355,6 +410,9 @@ export async function startPeerSync(
               case "server-error":
               case "socket-error":
               case "socket-closed":
+                // Recoverable: try to get the socket back rather than sitting
+                // there explaining that it is gone.
+                scheduleReconnect();
                 diagnose(
                   "Could not reach the matchmaking service. Check this device is online, " +
                     "then try again. If it keeps failing, use a merge file instead."
@@ -423,7 +481,9 @@ export async function startPeerSync(
     onError?.(error instanceof Error ? error : new Error(String(error)));
   }
 
-  const retry = async () => {
+  // Declared as a function so the reconnect scheduler above can call it
+  // regardless of ordering, rather than relying on its timer being slow enough.
+  async function retry() {
     if (destroyed) return;
     diagnosis = null;
     attemptedDials = 0;
@@ -444,7 +504,7 @@ export async function startPeerSync(
       setStatus("error");
       onError?.(error instanceof Error ? error : new Error(String(error)));
     }
-  };
+  }
 
   return {
     status: () => status,
@@ -454,6 +514,7 @@ export async function startPeerSync(
     destroy: () => {
       destroyed = true;
       if (rediscoverTimer) clearTimeout(rediscoverTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       doc.off("update", onDocUpdate);
       for (const conn of connections.values()) conn.close();
       connections.clear();
