@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Download, Share2, Trash2, RefreshCw, ShieldCheck } from "lucide-react";
+import { FileText, Download, Share2, Trash2, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import {
   availableDays, buildLogFile, clearLogs, describeDevice,
-  entriesFor, today, type DeviceInfo,
+  entriesFor, today, getDeviceName, setDeviceName, type DeviceInfo,
 } from "@/lib/diagnostics/logger";
 
 /**
@@ -23,11 +25,13 @@ export function DiagnosticsPanel() {
   const [counts, setCounts] = useState<Record<string, { total: number; problems: number }>>({});
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
 
   const refresh = useCallback(async () => {
     const [list, info] = await Promise.all([availableDays(), describeDevice()]);
     setDays(list);
     setDevice(info);
+    setNameDraft(getDeviceName() ?? "");
 
     const summary: Record<string, { total: number; problems: number }> = {};
     for (const day of list.slice(0, 7)) {
@@ -114,6 +118,39 @@ export function DiagnosticsPanel() {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Chrome on Android reports every phone as "K", so two devices in one
+            family would otherwise write identically named files. */}
+        {device?.labelIsGeneric && (
+          <div className="rounded-lg border border-yellow-500/40 bg-yellow-50 dark:bg-yellow-900/20 p-3 space-y-2">
+            <Label htmlFor="deviceName" className="flex items-center gap-2 text-sm">
+              <Smartphone className="w-4 h-4" />
+              Name this device
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Your browser does not reveal the model, so logs from two phones would have the
+              same filename. A name makes them easy to tell apart.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                id="deviceName"
+                placeholder="e.g. Madan Samsung"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={!nameDraft.trim()}
+                onClick={() => {
+                  setDeviceName(nameDraft);
+                  void refresh();
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+
         {device && (
           <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-0.5">
             <p>

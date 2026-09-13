@@ -16,6 +16,20 @@
 import { db, type LogEntry } from "@/lib/db/schema";
 import { generateId } from "@/lib/utils";
 
+export const DEVICE_NAME_KEY = "kalyanam_device_name";
+
+/** A name the owner gave this device, if any. */
+export function getDeviceName(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(DEVICE_NAME_KEY);
+}
+
+export function setDeviceName(name: string): void {
+  const trimmed = name.trim();
+  if (trimmed) localStorage.setItem(DEVICE_NAME_KEY, trimmed);
+  else localStorage.removeItem(DEVICE_NAME_KEY);
+}
+
 /** Days of history to keep. Older days are pruned on startup. */
 export const RETENTION_DAYS = 7;
 
@@ -143,6 +157,8 @@ export async function clearLogs(): Promise<void> {
 
 export interface DeviceInfo {
   label: string;
+  /** True when the label is a guess, so the UI can prompt for a real name. */
+  labelIsGeneric: boolean;
   userAgent: string;
   platform: string;
   screen: string;
@@ -155,13 +171,25 @@ export interface DeviceInfo {
 
 /**
  * A human-recognisable name for the device, so two log files can be told apart.
+ *
  * Derived from the user agent rather than asked for, because nobody wants a
- * setup step before they can report a bug.
+ * setup step before they can report a bug - but recent Chrome on Android
+ * reports the model as a literal "K" in its reduced user agent, so every
+ * Android phone in a family produces the same name and the same filename. When
+ * that happens the owner is asked to name the device instead.
  */
 export function deviceLabel(ua = typeof navigator !== "undefined" ? navigator.userAgent : ""): string {
+  const given = getDeviceName();
+  if (given) return given;
+
   // Android puts the model in the build token: "...; SM-S911B Build/..."
   const android = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\s+Build\/|\))/);
-  if (android) return android[1].trim();
+  if (android) {
+    const model = android[1].trim();
+    // "K" is Chrome's placeholder, not a model. Anything that short is useless
+    // for telling two phones apart.
+    return model.length > 1 && model !== "K" ? model : "Android phone";
+  }
   if (/iPhone/.test(ua)) return "iPhone";
   if (/iPad/.test(ua)) return "iPad";
   if (/Macintosh/.test(ua)) return "Mac";
@@ -195,8 +223,11 @@ export async function describeDevice(): Promise<DeviceInfo> {
     }
   };
 
+  const label = safely(() => deviceLabel(), "Unknown device");
+
   return {
-    label: safely(() => deviceLabel(), "Unknown device"),
+    label,
+    labelIsGeneric: !getDeviceName() && ["Android phone", "Unknown device"].includes(label),
     userAgent: safely(() => navigator.userAgent, "unknown"),
     platform: safely(() => nav.platform, "unknown"),
     screen: safely(

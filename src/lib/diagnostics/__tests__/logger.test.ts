@@ -2,6 +2,7 @@ import { db } from "@/lib/db/schema";
 import {
   log, logInfo, logError, redact, deviceLabel, logFilename,
   availableDays, entriesFor, clearLogs, buildLogFile, prune, today,
+  getDeviceName, setDeviceName, describeDevice,
 } from "../logger";
 
 beforeEach(async () => { await db.logs.clear(); });
@@ -149,5 +150,49 @@ describe("clearLogs", () => {
     await logInfo("t", "x");
     await clearLogs();
     expect(await availableDays()).toEqual([]);
+  });
+});
+
+describe("device naming", () => {
+  beforeEach(() => localStorage.removeItem("kalyanam_device_name"));
+
+  it('does not accept Chrome\'s "K" placeholder as a model', () => {
+    // Recent Chrome on Android hides the model this way, so every phone in a
+    // family would otherwise share a name - and a filename.
+    expect(
+      deviceLabel("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/152 Mobile")
+    ).toBe("Android phone");
+  });
+
+  it("still uses a real model when the browser gives one", () => {
+    expect(
+      deviceLabel("Mozilla/5.0 (Linux; Android 14; SM-S911B Build/UP1A) AppleWebKit/537.36")
+    ).toBe("SM-S911B");
+  });
+
+  it("prefers a name the owner gave", () => {
+    setDeviceName("Madan Samsung");
+    expect(deviceLabel("Mozilla/5.0 (Linux; Android 10; K) Chrome/152 Mobile")).toBe("Madan Samsung");
+  });
+
+  it("lets a given name be cleared", () => {
+    setDeviceName("Temp");
+    setDeviceName("   ");
+    expect(getDeviceName()).toBeNull();
+  });
+
+  it("produces distinguishable filenames for two named phones", () => {
+    setDeviceName("Madan Samsung");
+    const a = logFilename("2026-09-13", deviceLabel());
+    setDeviceName("Sister iQOO");
+    const b = logFilename("2026-09-13", deviceLabel());
+    expect(a).not.toBe(b);
+    expect(a).toBe("kalyanam-log-Madan-Samsung-2026-09-13.txt");
+    expect(b).toBe("kalyanam-log-Sister-iQOO-2026-09-13.txt");
+  });
+
+  it("flags a generic label so the UI knows to ask", async () => {
+    const info = await describeDevice();
+    expect(typeof info.labelIsGeneric).toBe("boolean");
   });
 });
