@@ -10,7 +10,7 @@
 import * as Y from "yjs";
 import { db } from "@/lib/db/schema";
 import { createWeddingDoc, readRecord, readCollection, writeRecord } from "../doc";
-import { startBridge } from "../bridge";
+import { startBridge, runLocalOnly } from "../bridge";
 
 const WEDDING_ID = "w1";
 const tick = () => new Promise((r) => setTimeout(r, 20));
@@ -273,5 +273,78 @@ describe("bulk directions", () => {
     await tick();
 
     expect(readCollection(doc, "tasks")).toHaveLength(0);
+  });
+});
+
+describe("local-only writes", () => {
+  it("does NOT replicate a delete made inside runLocalOnly", async () => {
+    await seedWedding();
+    await db.tasks.add({
+      id: "t1", weddingId: WEDDING_ID, title: "Book priest",
+      priority: "high", status: "pending",
+      createdBy: "u1", createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.seedFromDexie();
+    expect(readCollection(doc, "tasks")).toHaveLength(1);
+
+    // "Remove this wedding from THIS device" - the family keeps theirs.
+    await runLocalOnly(async () => {
+      await db.tasks.delete("t1");
+      await db.weddings.delete(WEDDING_ID);
+    });
+    await tick();
+
+    expect(await db.tasks.get("t1")).toBeUndefined();        // gone here
+    expect(readCollection(doc, "tasks")).toHaveLength(1);     // still theirs
+    expect(readRecord(doc, "wedding", WEDDING_ID)).toBeDefined();
+  });
+
+  it("still replicates an ordinary delete", async () => {
+    await seedWedding();
+    await db.tasks.add({
+      id: "t2", weddingId: WEDDING_ID, title: "Confirm caterer",
+      priority: "low", status: "pending",
+      createdBy: "u1", createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.seedFromDexie();
+
+    await db.tasks.delete("t2");
+    await tick();
+
+    expect(readCollection(doc, "tasks")).toHaveLength(0);
+  });
+
+  it("does not replicate writes made inside runLocalOnly either", async () => {
+    handle = startBridge(doc, WEDDING_ID);
+
+    await runLocalOnly(async () => {
+      await db.tasks.add({
+        id: "t3", weddingId: WEDDING_ID, title: "Local only",
+        priority: "low", status: "pending",
+        createdBy: "u1", createdAt: new Date(), updatedAt: new Date(),
+      } as never);
+    });
+    await tick();
+
+    expect(await db.tasks.get("t3")).toBeDefined();
+    expect(readCollection(doc, "tasks")).toHaveLength(0);
+  });
+
+  it("resumes replicating once the local-only block finishes", async () => {
+    handle = startBridge(doc, WEDDING_ID);
+    await runLocalOnly(async () => { /* nothing */ });
+
+    await db.tasks.add({
+      id: "t4", weddingId: WEDDING_ID, title: "After",
+      priority: "low", status: "pending",
+      createdBy: "u1", createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+    await tick();
+
+    expect(readCollection(doc, "tasks")).toHaveLength(1);
   });
 });

@@ -317,6 +317,8 @@ export async function startPeerSync(
             ...(peerOptions ?? {}),
           });
 
+          let timer: ReturnType<typeof setTimeout>;
+
           const onOpen = () => {
             void logInfo("sync", "claimed a slot with the broker", { slot, room: roomTag });
             candidate.off("error", onErr);
@@ -327,13 +329,21 @@ export async function startPeerSync(
           };
 
           const onErr = (err: Error & { type?: string }) => {
-            // peer-unavailable just means that slot is empty, which is the
-            // normal case; logging it as a warning buries the real failures.
-            if (err.type !== "peer-unavailable") {
-              void logWarn("sync", "broker error", { type: err.type ?? "unknown", slot });
-            }
+            // An empty slot reports peer-unavailable. That is the normal case
+            // while looking for family - not a failure, and not something to
+            // tell anyone about. It used to fall through to the catch-all
+            // below and announce "could not connect to the family" about a
+            // tenth of a second after a perfectly successful start.
+            if (err.type === "peer-unavailable") return;
+
+            void logWarn("sync", "broker error", { type: err.type ?? "unknown", slot });
+
             if (err.type === "unavailable-id") {
-              // Someone else holds this slot - take the next one.
+              // Someone else holds this slot - take the next one. The timer
+              // for THIS attempt has to go with it, or it fires later and
+              // reports a timeout against a slot we already stopped waiting
+              // on, long after another slot connected fine.
+              clearTimeout(timer);
               candidate.destroy();
               claimSlot(slot + 1).then(resolve, reject);
               return;
@@ -372,7 +382,7 @@ export async function startPeerSync(
           // Nothing here is allowed to hang indefinitely. A broker that
           // accepts the socket and never answers used to leave the UI
           // spinning with no explanation at all.
-          const timer = setTimeout(() => {
+          timer = setTimeout(() => {
             candidate.off("open", onOpen);
             candidate.off("error", onErr);
             candidate.destroy();
@@ -391,7 +401,10 @@ export async function startPeerSync(
             onOpen();
           });
           candidate.on("error", (err: Error & { type?: string }) => {
-            if (err.type !== "unavailable-id") clearTimeout(timer);
+            // onErr clears the timer itself where it needs to survive a hop.
+            if (err.type !== "unavailable-id" && err.type !== "peer-unavailable") {
+              clearTimeout(timer);
+            }
             onErr(err);
           });
         })

@@ -17,13 +17,14 @@
 
 import * as Y from "yjs";
 import { db } from "@/lib/db/schema";
-import { createWeddingDoc, type WeddingDoc, WEDDING_KEY } from "./doc";
-import { startBridge, LOCAL_ORIGIN, type BridgeHandle } from "./bridge";
+import { createWeddingDoc, docStoreName, type WeddingDoc, WEDDING_KEY } from "./doc";
+import { startBridge, LOCAL_ORIGIN, runLocalOnly, type BridgeHandle } from "./bridge";
 import { startPeerSync, type PeerSyncHandle, type SyncStatus } from "./peer-provider";
 import { getOrCreateRoomSecret, encodeInvite, type Invite } from "./room";
 import { logInfo, logError } from "@/lib/diagnostics/logger";
 
 export * from "./room";
+export { runLocalOnly } from "./bridge";
 export type { SyncStatus } from "./peer-provider";
 
 export interface FamilySyncHandle {
@@ -166,6 +167,44 @@ export async function createMergeFile(weddingId: string): Promise<Blob> {
   bridge.stop();
   weddingDoc.destroy();
   return toBlob(bytes);
+}
+
+/**
+ * Remove every trace of sync from this device.
+ *
+ * The replicated document lives in its own IndexedDB database, separate from
+ * the wedding data, so wiping the wedding without this leaves the document
+ * behind - and the next time sync starts it faithfully restores everything the
+ * person just asked to delete.
+ */
+export async function forgetSyncData(weddingId?: string): Promise<void> {
+  active?.stop();
+  active = null;
+
+  const names: string[] = [];
+  try {
+    const databases = await indexedDB.databases?.();
+    for (const database of databases ?? []) {
+      if (database.name?.startsWith("kalyanam-doc-")) names.push(database.name);
+    }
+  } catch {
+    /* indexedDB.databases is not available everywhere */
+  }
+
+  // Fall back to the one we know the name of.
+  if (names.length === 0 && weddingId) names.push(docStoreName(weddingId));
+
+  await Promise.all(
+    names.map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          const request = indexedDB.deleteDatabase(name);
+          request.onsuccess = () => resolve();
+          request.onerror = () => resolve();
+          request.onblocked = () => resolve();
+        })
+    )
+  );
 }
 
 /** Apply a merge file produced by another device. */

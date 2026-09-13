@@ -29,13 +29,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { db, Wedding } from "@/lib/db/schema";
 import { activateWedding, clearSession } from "@/lib/session";
 import { FamilySyncJoin } from "@/components/sync/family-sync-join";
+import { runLocalOnly } from "@/lib/sync/crdt";
+import { DiagnosticsPanel } from "@/components/sync/diagnostics-panel";
 import { formatDate, getDaysUntil } from "@/lib/utils";
 import {
   importWeddingData,
   readFile,
 } from "@/lib/sync";
 
-type LoginMode = 'select' | 'import' | 'family-invite';
+type LoginMode = 'select' | 'import' | 'family-invite' | 'diagnostics';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -82,12 +84,20 @@ export default function LoginPage() {
   const handleDeleteWedding = async (e: React.MouseEvent, weddingId: string) => {
     e.stopPropagation();
     
-    if (!confirm("Are you sure you want to delete this wedding and all its data? This cannot be undone.")) {
+    if (
+      !confirm(
+        "Remove this wedding from THIS device?\n\n" +
+          "Other family devices keep their own copy - this does not delete it for them."
+      )
+    ) {
       return;
     }
 
     try {
-      await db.transaction("rw", 
+      // Local only. Deleting a task should reach the family; "I am done with
+      // this on this phone" must not, or one person logging out wipes the
+      // wedding for everyone.
+      await runLocalOnly(() => db.transaction("rw", 
         [db.weddings, db.events, db.guests, db.tasks, db.expenses, 
          db.budgetCategories, db.vendors, db.messages, db.reminders, 
          db.familyMembers, db.followUps, db.locationPings, db.locationRequests, db.venues],
@@ -107,7 +117,7 @@ export default function LoginPage() {
           await db.venues.where("weddingId").equals(weddingId).delete();
           await db.weddings.delete(weddingId);
         }
-      );
+      ));
       
       if (localStorage.getItem("kalyanam_wedding_id") === weddingId) {
         clearSession();
@@ -219,6 +229,7 @@ export default function LoginPage() {
             <Heart className="w-10 h-10 text-primary" fill="currentColor" />
           </div>
           <h1 className="text-3xl font-display font-bold mb-2">
+            {mode === 'diagnostics' && 'Diagnostics'}
             {mode === 'family-invite' && 'Join with Family Sync'}
             {mode === 'select' && 'Welcome to Kalyanam'}
             {mode === 'import' && 'Import Wedding Data'}
@@ -231,6 +242,8 @@ export default function LoginPage() {
 
         <AnimatePresence mode="wait">
           {/* SELECT MODE */}
+          {mode === 'diagnostics' && <DiagnosticsPanel />}
+
           {mode === 'family-invite' && (
             <FamilySyncJoin onCancel={() => setMode('select')} />
           )}
@@ -500,6 +513,17 @@ export default function LoginPage() {
           Your data is stored locally on this device.
           <br />
           Use Sync or Export to transfer between devices.
+        </p>
+
+        {/* Reachable without a wedding, because the problems worth reporting
+            often happen before anyone gets that far. */}
+        <p className="text-center mt-3">
+          <button
+            onClick={() => setMode(mode === 'diagnostics' ? 'select' : 'diagnostics')}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
+          >
+            {mode === 'diagnostics' ? 'Hide diagnostics' : 'Something not working? Get a log'}
+          </button>
         </p>
       </div>
     </main>

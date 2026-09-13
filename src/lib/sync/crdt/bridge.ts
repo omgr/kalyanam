@@ -21,6 +21,38 @@ import { WEDDING_KEY, readCollection, writeRecord, deleteRecord } from "./doc";
 /** Marks transactions this bridge produced, so we ignore our own echoes. */
 export const LOCAL_ORIGIN = Symbol("kalyanam-local");
 
+/**
+ * Suppresses replication for writes made inside `runLocalOnly`.
+ *
+ * Module-level rather than per-bridge because the caller - "remove this
+ * wedding from this phone" - should not have to know whether a bridge is
+ * running, or find it.
+ */
+let localOnlyDepth = 0;
+
+/**
+ * Run writes that must NOT reach the rest of the family.
+ *
+ * Removing a wedding from your own device is the case this exists for.
+ * Deleting a record is a legitimate replicated operation - one person striking
+ * a task off should clear it everywhere - but "I am done with this on this
+ * phone" is not the same statement as "destroy the family's copy". Without
+ * this, one person logging out wiped the wedding from every connected device
+ * and left the others with nothing.
+ */
+export async function runLocalOnly<T>(work: () => Promise<T>): Promise<T> {
+  localOnlyDepth++;
+  try {
+    return await work();
+  } finally {
+    localOnlyDepth--;
+  }
+}
+
+export function isLocalOnly(): boolean {
+  return localOnlyDepth > 0;
+}
+
 type Row = Record<string, unknown>;
 
 export interface BridgeHandle {
@@ -48,7 +80,7 @@ export function startBridge(doc: Y.Doc, weddingId: string): BridgeHandle {
   // Dexie -> document
   // ---------------------------------------------------------------
   const mirrorUpsert = (docName: string, record: Row) => {
-    if (applyingRemote || !record?.id) return;
+    if (localOnlyDepth > 0 || applyingRemote || !record?.id) return;
     // Only replicate rows belonging to the wedding we are syncing.
     if (docName === WEDDING_KEY) {
       if (record.id !== weddingId) return;
@@ -62,7 +94,7 @@ export function startBridge(doc: Y.Doc, weddingId: string): BridgeHandle {
   };
 
   const mirrorDelete = (docName: string, id: string) => {
-    if (applyingRemote) return;
+    if (localOnlyDepth > 0 || applyingRemote) return;
     doc.transact(() => deleteRecord(doc, docName, id), LOCAL_ORIGIN);
   };
 
@@ -78,17 +110,17 @@ export function startBridge(doc: Y.Doc, weddingId: string): BridgeHandle {
     // the only moment `applyingRemote` is reliably true. Deferring the check
     // to the microtask would let a remote change slip back out as a local one.
     const creating = (_pk: unknown, obj: Row) => {
-      if (applyingRemote) return;
+      if (localOnlyDepth > 0 || applyingRemote) return;
       const snapshot = { ...obj };
       queueMicrotask(() => mirrorUpsert(docName, snapshot));
     };
     const updating = (mods: Row, _pk: unknown, obj: Row) => {
-      if (applyingRemote) return;
+      if (localOnlyDepth > 0 || applyingRemote) return;
       const snapshot = { ...obj, ...mods };
       queueMicrotask(() => mirrorUpsert(docName, snapshot));
     };
     const deleting = (pk: unknown) => {
-      if (applyingRemote) return;
+      if (localOnlyDepth > 0 || applyingRemote) return;
       const id = String(pk);
       queueMicrotask(() => mirrorDelete(docName, id));
     };

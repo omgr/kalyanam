@@ -23,6 +23,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { useAppSettings, useWedding } from "@/lib/db/hooks";
 import { db, AppSettings } from "@/lib/db/schema";
 import { activateWedding, clearSession } from "@/lib/session";
+import { runLocalOnly, forgetSyncData } from "@/lib/sync/crdt";
 import { useTheme } from "next-themes";
 
 export default function SettingsPage() {
@@ -139,12 +140,18 @@ export default function SettingsPage() {
   const handleClearAllData = async () => {
     if (
       confirm(
-        "⚠️ This will permanently delete ALL your wedding data. This cannot be undone!\n\nAre you absolutely sure?"
+        "⚠️ This will permanently delete ALL wedding data on THIS device. This cannot be undone!\n\n" +
+          "Other family devices keep their own copy.\n\nAre you absolutely sure?"
       )
     ) {
       if (confirm("Last chance! Type 'DELETE' to confirm.")) {
+        const weddingId = localStorage.getItem("kalyanam_wedding_id") ?? undefined;
+        // The replicated document is a separate database. Leaving it behind
+        // means the next sync restores everything that was just deleted.
+        await forgetSyncData(weddingId);
         await db.delete();
         clearSession();
+        localStorage.removeItem("kalyanam_family_sync_enabled");
         window.location.href = "/";
       }
     }
