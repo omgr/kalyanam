@@ -51,8 +51,9 @@ export function AutoLocationPanel({
       <CardContent className="space-y-4">
         {auto.placedCount === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Pin a few venue areas first using the crosshair above. Once an area knows where it
-            is, your phone can recognise it without you doing anything.
+            {zones && zones.length > 0
+              ? "The venue areas are here, but none has been pinned yet. Whoever is at the venue should stand in each one and tap its crosshair above - it only needs doing once, by one person."
+              : "No venue areas yet. Add them above, or wait for whoever set them up to sync - they arrive automatically."}
           </p>
         ) : !auto.enabled ? (
           <>

@@ -102,19 +102,11 @@ async function beginFamilySync(
   const { doc } = weddingDoc;
   const bridge = startBridge(doc, weddingId);
 
-  // Reconcile whichever side has data. On an existing device the document is
-  // empty on first run and Dexie holds everything; on a device that just
-  // joined, the reverse is true.
-  const docHasWedding = doc.getMap(WEDDING_KEY).size > 0;
-  const localWedding = await db.weddings.get(weddingId);
-
-  if (!docHasWedding && localWedding) {
-    void logInfo("sync", "seeding the replicated document from local data");
-    await bridge.seedFromDexie();
-  } else if (docHasWedding) {
-    void logInfo("sync", "applying the replicated document to local data");
-    await bridge.applyToDexie();
-  }
+  // Merge both ways rather than choosing a direction. Anything edited while
+  // sync was switched off lives only in Dexie, and applying the document over
+  // it would discard that work silently.
+  const { pushed, pulled } = await bridge.reconcile();
+  void logInfo("sync", "reconciled local data with the document", { pushed, pulled });
 
   // Anything arriving from a peer counts as a successful exchange. Freshness
   // is what tells a family whether they are looking at current information.

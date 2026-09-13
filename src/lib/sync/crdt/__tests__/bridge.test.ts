@@ -348,3 +348,128 @@ describe("local-only writes", () => {
     expect(readCollection(doc, "tasks")).toHaveLength(1);
   });
 });
+
+describe("reconcile: work done while sync was switched off", () => {
+  it("pushes up a record created with no bridge running", async () => {
+    // Exactly what happened on a real phone: venue areas pinned during three
+    // hours with sync off, then lost the moment it reconnected because startup
+    // applied the document over local data instead of merging.
+    await seedWedding();
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.seedFromDexie();
+    handle.stop();
+    handle = null;
+
+    // Sync is off. A venue is created and pinned.
+    await db.venues.add({
+      id: "v1", weddingId: WEDDING_ID, name: "Sai Gardens",
+      zones: [{ id: "z1", name: "Lounge", latitude: 17.44, longitude: 78.4 }],
+      createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+
+    // Sync comes back.
+    handle = startBridge(doc, WEDDING_ID);
+    const result = await handle.reconcile();
+
+    expect(result.pushed).toBeGreaterThan(0);
+    const inDoc = readCollection(doc, "venues");
+    expect(inDoc).toHaveLength(1);
+    expect((inDoc[0].zones as Array<{ name: string }>)[0].name).toBe("Lounge");
+  });
+
+  it("does not overwrite a newer local edit with an older remote one", async () => {
+    await seedWedding();
+    await db.tasks.add({
+      id: "t1", weddingId: WEDDING_ID, title: "Old title",
+      priority: "low", status: "pending", createdBy: "u1",
+      createdAt: new Date("2026-09-01"), updatedAt: new Date("2026-09-01"),
+    } as never);
+
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.seedFromDexie();
+    handle.stop();
+    handle = null;
+
+    // Edited locally with sync off, so the document still holds the old copy.
+    await db.tasks.update("t1", { title: "Edited offline", updatedAt: new Date("2026-09-13") });
+
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.reconcile();
+
+    expect(readRecord(doc, "tasks", "t1")).toMatchObject({ title: "Edited offline" });
+    expect((await db.tasks.get("t1"))!.title).toBe("Edited offline");
+  });
+
+  it("pulls down a record this device has never seen", async () => {
+    await seedWedding();
+    handle = startBridge(doc, WEDDING_ID);
+
+    doc.transact(() => {
+      writeRecord(doc, "tasks", "remote-1", {
+        title: "From another phone", status: "pending", priority: "low",
+        createdBy: "u2", createdAt: "2026-09-13T00:00:00.000Z",
+        updatedAt: "2026-09-13T00:00:00.000Z",
+      });
+    }, "remote-device");
+
+    const result = await handle.reconcile();
+
+    expect(result.pulled).toBeGreaterThan(0);
+    expect((await db.tasks.get("remote-1"))!.title).toBe("From another phone");
+  });
+
+  it("lets a newer remote edit win over a stale local one", async () => {
+    await seedWedding();
+    await db.tasks.add({
+      id: "t2", weddingId: WEDDING_ID, title: "Stale local",
+      priority: "low", status: "pending", createdBy: "u1",
+      createdAt: new Date("2026-09-01"), updatedAt: new Date("2026-09-01"),
+    } as never);
+
+    handle = startBridge(doc, WEDDING_ID);
+    doc.transact(() => {
+      writeRecord(doc, "tasks", "t2", {
+        title: "Newer from family", status: "pending", priority: "low",
+        createdBy: "u2", createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-13T00:00:00.000Z",
+      });
+    }, "remote-device");
+
+    await handle.reconcile();
+
+    expect((await db.tasks.get("t2"))!.title).toBe("Newer from family");
+  });
+
+  it("carries venue areas to a device that joined later", async () => {
+    // The reported symptom: one phone had the pinned areas, the other showed
+    // "No areas yet" while still seeing the first phone's location.
+    await seedWedding();
+    await db.venues.add({
+      id: "v9", weddingId: WEDDING_ID, name: "Sai Gardens",
+      zones: [
+        { id: "z1", name: "Lounge", latitude: 17.44, longitude: 78.4 },
+        { id: "z2", name: "Kitchen", latitude: 17.4404, longitude: 78.4 },
+      ],
+      createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+
+    handle = startBridge(doc, WEDDING_ID);
+    await handle.reconcile();
+    handle.stop();
+    handle = null;
+
+    // Second device: fresh document carrying the first device's state.
+    const deviceB = createWeddingDoc(WEDDING_ID, { persist: false }).doc;
+    Y.applyUpdate(deviceB, Y.encodeStateAsUpdate(doc));
+    await wipe();
+
+    const bridgeB = startBridge(deviceB, WEDDING_ID);
+    await bridgeB.reconcile();
+    bridgeB.stop();
+
+    const venue = await db.venues.get("v9");
+    expect(venue).toBeDefined();
+    expect(venue!.zones).toHaveLength(2);
+    expect(venue!.zones!.map((z) => z.name)).toEqual(["Lounge", "Kitchen"]);
+  });
+});

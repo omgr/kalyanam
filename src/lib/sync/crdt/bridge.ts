@@ -61,6 +61,8 @@ export interface BridgeHandle {
   seedFromDexie: () => Promise<void>;
   /** Copy everything currently in the document into Dexie. */
   applyToDexie: () => Promise<void>;
+  /** Merge both ways, keeping whichever side of each record is newer. */
+  reconcile: () => Promise<{ pushed: number; pulled: number }>;
 }
 
 /** Document collection name -> Dexie table name. */
@@ -254,9 +256,93 @@ export function startBridge(doc: Y.Doc, weddingId: string): BridgeHandle {
     }
   };
 
+  /**
+   * Merge local state and the document, in both directions.
+   *
+   * The bridge only mirrors writes while a session is running, so anything
+   * done with sync switched off exists in Dexie and nowhere else. Startup used
+   * to choose one direction or the other: if the document already knew about
+   * the wedding it applied the document *over* local data, which meant every
+   * edit made offline was invisible to the family and a newer local record
+   * could be overwritten by an older remote one. A real pair of logs showed
+   * exactly that - venue areas pinned during three hours with sync off, then
+   * discarded the moment it reconnected.
+   *
+   * Records present only locally are pushed up. Records present in both are
+   * resolved by updatedAt, newest wins. Everything else is pulled down.
+   */
+  const reconcile = async () => {
+    let pushed = 0;
+    let pulled = 0;
+
+    const timeOf = (record: Row | undefined): number => {
+      const value = record?.updatedAt ?? record?.createdAt;
+      if (!value) return 0;
+      const time = new Date(value as string | Date).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+
+    const pairs: Array<[string, string]> = [
+      ["weddings", WEDDING_KEY],
+      ...SYNCED_TABLES.map((name) => [name, name] as [string, string]),
+    ];
+
+    for (const [dexieName, docName] of pairs) {
+      const table = tableOf(dexieName);
+      if (!table) continue;
+
+      const local =
+        dexieName === "weddings"
+          ? ([await table.get(weddingId)].filter(Boolean) as Row[])
+          : await table.where("weddingId").equals(weddingId).toArray();
+
+      const remote = new Map(
+        readCollection(doc, docName).map((r) => [String(r.id), r])
+      );
+
+      // Local -> document, where local is new or newer.
+      const toPush: Row[] = [];
+      for (const row of local) {
+        const id = String(row.id);
+        const theirs = remote.get(id);
+        if (!theirs || timeOf(row) > timeOf(theirs)) toPush.push(row);
+      }
+
+      if (toPush.length) {
+        doc.transact(() => {
+          for (const row of toPush) writeRecord(doc, docName, String(row.id), toPlain(row));
+        }, LOCAL_ORIGIN);
+        pushed += toPush.length;
+      }
+
+      // Document -> local, for everything we did not just push.
+      const pushedIds = new Set(toPush.map((r) => String(r.id)));
+      const toPull = [...remote.values()].filter((r) => !pushedIds.has(String(r.id)));
+
+      if (toPull.length) {
+        applyingRemote = true;
+        try {
+          const rows = toPull.map((r) =>
+            reviveDates(dexieName, {
+              ...r,
+              ...(docName === WEDDING_KEY ? { id: weddingId } : { weddingId }),
+            })
+          );
+          await table.bulkPut(rows);
+          pulled += rows.length;
+        } finally {
+          applyingRemote = false;
+        }
+      }
+    }
+
+    return { pushed, pulled };
+  };
+
   return {
     stop: () => teardown.forEach((fn) => fn()),
     seedFromDexie,
     applyToDexie,
+    reconcile,
   };
 }
