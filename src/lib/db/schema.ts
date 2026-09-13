@@ -431,6 +431,20 @@ export interface Reminder {
   createdAt: Date;
 }
 
+// Diagnostics
+export interface LogEntry {
+  id: string;
+  /** YYYY-MM-DD, so a day's log can be found and exported on its own. */
+  day: string;
+  at: Date;
+  level: "info" | "warn" | "error";
+  /** Which part of the app: "sync", "guests", "location"... */
+  area: string;
+  message: string;
+  /** Structured extras. Must never contain personal data - see logger.ts. */
+  detail?: Record<string, unknown>;
+}
+
 // App Settings
 export interface AppSettings {
   id: string;
@@ -485,6 +499,7 @@ export class KalyanamDB extends Dexie {
   reminders!: Table<Reminder>;
   paymentPlans!: Table<PaymentPlan>;
   appSettings!: Table<AppSettings>;
+  logs!: Table<LogEntry>;
 
   constructor() {
     super("KalyanamDB");
@@ -508,6 +523,12 @@ export class KalyanamDB extends Dexie {
       reminders: "id, weddingId, relatedTo, relatedId, scheduledFor, isTriggered, createdAt",
       paymentPlans: "id, weddingId, expenseId, vendorId, status, nextDueDate, createdAt",
       appSettings: "id",
+    });
+
+    // v2 adds the diagnostic log. Dexie adds the store in place, so existing
+    // weddings are untouched.
+    this.version(2).stores({
+      logs: "id, day, at, level, area",
     });
   }
 }

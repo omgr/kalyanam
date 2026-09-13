@@ -10,6 +10,7 @@ import { db, type Guest } from "@/lib/db/schema";
 import { useGuests } from "@/lib/db/hooks";
 import { generateId } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { logInfo, logError } from "@/lib/diagnostics/logger";
 import {
   isContactPickerSupported, pickFromContacts, parseGuestFile, dedupeGuests,
   type GuestDraft,
@@ -43,6 +44,9 @@ export function GuestImport({ weddingId, onDone }: { weddingId: string; onDone?:
     setDrafts(unique);
     setDuplicates(dupes);
     setSkipped(skippedCount);
+    void logInfo("guests", "reviewed an import", {
+      offered: incoming.length, unique: unique.length, duplicates: dupes, unnamed: skippedCount,
+    });
 
     if (unique.length === 0) {
       toast({
@@ -74,6 +78,9 @@ export function GuestImport({ weddingId, onDone }: { weddingId: string; onDone?:
       const { guests, skipped: skippedCount } = parseGuestFile(file.name, text);
       review(guests, skippedCount);
     } catch (error) {
+      void logError("guests", "could not read the import file", {
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       toast({
         variant: "destructive",
         title: "Could not read that file",
@@ -109,6 +116,7 @@ export function GuestImport({ weddingId, onDone }: { weddingId: string; onDone?:
           updatedAt: now,
         })) as never[]
       );
+      void logInfo("guests", "added guests", { count: drafts.length });
       toast({
         variant: "success",
         title: `${drafts.length} guest${drafts.length === 1 ? "" : "s"} added`,

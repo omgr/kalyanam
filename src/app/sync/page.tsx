@@ -14,6 +14,7 @@ import { useWedding } from "@/lib/db/hooks";
 import { activateWedding } from "@/lib/session";
 import { exportWeddingData, downloadExport, importWeddingData, readFile } from "@/lib/sync";
 import { FamilySyncPanel } from "@/components/sync/family-sync-panel";
+import { DiagnosticsPanel } from "@/components/sync/diagnostics-panel";
 
 /**
  * Sync and backup.
@@ -209,6 +210,8 @@ export default function SyncPage() {
               </p>
             </CardContent>
           </Card>
+
+          <DiagnosticsPanel />
 
           <Card>
             <CardContent className="pt-6">

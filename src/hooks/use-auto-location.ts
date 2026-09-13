@@ -8,6 +8,7 @@ import {
   locatedZones,
   type ZoneMatch,
 } from "@/lib/location/zones";
+import { logInfo, logWarn } from "@/lib/diagnostics/logger";
 
 const ENABLED_KEY = "kalyanam_auto_location";
 
@@ -80,6 +81,9 @@ export function useAutoLocation(
         zone: zoneName,
         updatedAt: new Date(),
       };
+      void logInfo("location", "area updated automatically", {
+        accuracy: Math.round(position.coords.accuracy ?? 0),
+      });
       await db.familyMembers.update(memberId, {
         lastLocation: location,
         locationUpdatedAt: new Date(),
@@ -109,6 +113,7 @@ export function useAutoLocation(
         }
       },
       (err) => {
+        void logWarn("location", "could not get a fix", { code: err.code });
         setError(
           err.code === err.PERMISSION_DENIED
             ? "Location permission was denied. Allow it in your browser settings, or pick your area by hand."

@@ -21,6 +21,7 @@ import { createWeddingDoc, type WeddingDoc, WEDDING_KEY } from "./doc";
 import { startBridge, LOCAL_ORIGIN, type BridgeHandle } from "./bridge";
 import { startPeerSync, type PeerSyncHandle, type SyncStatus } from "./peer-provider";
 import { getOrCreateRoomSecret, encodeInvite, type Invite } from "./room";
+import { logInfo, logError } from "@/lib/diagnostics/logger";
 
 export * from "./room";
 export type { SyncStatus } from "./peer-provider";
@@ -81,8 +82,10 @@ export async function startFamilySync(
   const localWedding = await db.weddings.get(weddingId);
 
   if (!docHasWedding && localWedding) {
+    void logInfo("sync", "seeding the replicated document from local data");
     await bridge.seedFromDexie();
   } else if (docHasWedding) {
+    void logInfo("sync", "applying the replicated document to local data");
     await bridge.applyToDexie();
   }
 
@@ -119,6 +122,7 @@ export async function startFamilySync(
     },
     exportUpdate: () => Y.encodeStateAsUpdate(doc),
     mergeUpdate: async (update: Uint8Array) => {
+      void logInfo("sync", "merging an update file", { bytes: update.byteLength });
       Y.applyUpdate(doc, update, "merge-file");
       // The bridge observer applies most of this, but a bulk merge is worth
       // reconciling wholesale so nothing is missed.

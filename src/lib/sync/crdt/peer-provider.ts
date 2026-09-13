@@ -24,6 +24,7 @@ import * as decoding from "lib0/decoding";
 import type Peer from "peerjs";
 import type { DataConnection } from "peerjs";
 import { deriveRoomId, slotPeerId, MAX_SLOTS } from "./room";
+import { logInfo, logWarn, logError } from "@/lib/diagnostics/logger";
 
 const MESSAGE_SYNC = 0;
 
@@ -121,11 +122,16 @@ export async function startPeerSync(
   let diagnosis: string | null = null;
 
   const diagnose = (message: string) => {
+    // Repeating the same explanation on every retry fills the log and hides
+    // whatever else happened.
+    if (diagnosis !== message) {
+      void logWarn("sync", "diagnosis", { text: message });
+    }
     diagnosis = message;
     onDiagnosis?.(message);
   };
   const connections = new Map<string, DataConnection>();
-  let rediscoverTimer: ReturnType<typeof setInterval> | null = null;
+  let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
 
   const setStatus = (next: SyncStatus) => {
     if (destroyed || status === next) return;
@@ -156,6 +162,10 @@ export async function startPeerSync(
   }
 
   const roomId = await deriveRoomId(weddingId, secret);
+  // The room id is a hash and carries no wedding content, so the first 6
+  // characters are safe to log and let two devices' logs be matched up.
+  const roomTag = roomId.slice(0, 6);
+  void logInfo("sync", "starting peer sync", { room: roomTag, online: navigator.onLine });
 
   // ------------------------------------------------------------------
   // wiring a single connection into the sync protocol
@@ -163,6 +173,7 @@ export async function startPeerSync(
   const wire = (conn: DataConnection) => {
     conn.on("open", () => {
       if (destroyed) return conn.close();
+      void logInfo("sync", "peer connected", { slot: conn.peer.split("-").pop(), total: connections.size + 1 });
       connections.set(conn.peer, conn);
       // Ask what they have; they will reply with whatever we are missing.
       conn.send(encodeSyncStep1(doc));
@@ -199,6 +210,9 @@ export async function startPeerSync(
     });
 
     const drop = () => {
+      if (connections.has(conn.peer)) {
+        void logInfo("sync", "peer disconnected", { slot: conn.peer.split("-").pop() });
+      }
       connections.delete(conn.peer);
       refreshStatus();
       // Losing the last peer is normal (they closed the app), not an error.
@@ -226,9 +240,24 @@ export async function startPeerSync(
   // claim a slot, then dial the others
   // ------------------------------------------------------------------
   let attemptedDials = 0;
+  let discoveryRound = 0;
 
+  /**
+   * Dial the other slots, looking for family.
+   *
+   * This used to fire at every slot every twenty seconds, forever: seven
+   * connection attempts a minute, per device, against a free shared broker.
+   * That is enough to be throttled, and being throttled looks exactly like the
+   * broker "not responding" - which is what a real phone reported.
+   *
+   * Now it backs off once nobody is found, and stops entirely while a peer is
+   * connected, since a connected device has nothing to discover.
+   */
   const dialOthers = () => {
     if (destroyed || !peer) return;
+    if (connections.size > 0) return; // already have family; leave the broker alone
+
+    discoveryRound++;
     for (let slot = 0; slot < MAX_SLOTS; slot++) {
       if (slot === mySlot) continue;
       const id = slotPeerId(roomId, slot);
@@ -244,7 +273,7 @@ export async function startPeerSync(
         setTimeout(() => {
           if (!destroyed && !conn.open && connections.size === 0) {
             attemptedDials++;
-            if (attemptedDials >= MAX_SLOTS - 1 && !diagnosis) {
+            if (attemptedDials >= MAX_SLOTS - 1 && !diagnosis && connections.size === 0) {
               diagnose(
                 "Found the family but could not open a direct connection. This network is " +
                   "probably blocking device-to-device traffic - try mobile data, or send a " +
@@ -257,6 +286,19 @@ export async function startPeerSync(
         /* empty slot */
       }
     }
+  };
+
+  /**
+   * Look again, less and less often. A family member opening the app later is
+   * worth waiting for; hammering a shared broker while nobody is there is not.
+   */
+  const scheduleRediscovery = () => {
+    if (destroyed) return;
+    const backoff = Math.min(rediscoverMs * 2 ** Math.min(discoveryRound, 4), 5 * 60_000);
+    rediscoverTimer = setTimeout(() => {
+      dialOthers();
+      scheduleRediscovery();
+    }, backoff);
   };
 
   const claimSlot = (slot: number): Promise<void> =>
@@ -276,6 +318,7 @@ export async function startPeerSync(
           });
 
           const onOpen = () => {
+            void logInfo("sync", "claimed a slot with the broker", { slot, room: roomTag });
             candidate.off("error", onErr);
             peer = candidate;
             mySlot = slot;
@@ -284,6 +327,11 @@ export async function startPeerSync(
           };
 
           const onErr = (err: Error & { type?: string }) => {
+            // peer-unavailable just means that slot is empty, which is the
+            // normal case; logging it as a warning buries the real failures.
+            if (err.type !== "peer-unavailable") {
+              void logWarn("sync", "broker error", { type: err.type ?? "unknown", slot });
+            }
             if (err.type === "unavailable-id") {
               // Someone else holds this slot - take the next one.
               candidate.destroy();
@@ -328,6 +376,9 @@ export async function startPeerSync(
             candidate.off("open", onOpen);
             candidate.off("error", onErr);
             candidate.destroy();
+            void logError("sync", "broker did not respond", {
+              slot, timeoutMs: connectTimeoutMs, online: navigator.onLine, room: roomTag,
+            });
             diagnose(
               "The matchmaking service did not respond. Check this device is online and try " +
                 "again - if it keeps happening, send a merge file instead."
@@ -353,7 +404,7 @@ export async function startPeerSync(
 
     dialOthers();
     refreshStatus();
-    rediscoverTimer = setInterval(dialOthers, rediscoverMs);
+    scheduleRediscovery();
   } catch (error) {
     setStatus("error");
     onError?.(error instanceof Error ? error : new Error(String(error)));
@@ -363,6 +414,8 @@ export async function startPeerSync(
     if (destroyed) return;
     diagnosis = null;
     attemptedDials = 0;
+    discoveryRound = 0;
+    if (rediscoverTimer) clearTimeout(rediscoverTimer);
     for (const conn of connections.values()) conn.close();
     connections.clear();
     peer?.destroy();
@@ -373,6 +426,7 @@ export async function startPeerSync(
       await claimSlot(0);
       dialOthers();
       refreshStatus();
+      scheduleRediscovery();
     } catch (error) {
       setStatus("error");
       onError?.(error instanceof Error ? error : new Error(String(error)));
@@ -386,7 +440,7 @@ export async function startPeerSync(
     retry,
     destroy: () => {
       destroyed = true;
-      if (rediscoverTimer) clearInterval(rediscoverTimer);
+      if (rediscoverTimer) clearTimeout(rediscoverTimer);
       doc.off("update", onDocUpdate);
       for (const conn of connections.values()) conn.close();
       connections.clear();

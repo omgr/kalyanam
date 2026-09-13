@@ -158,3 +158,45 @@ It cannot replace real phones on real networks — it runs on one machine, and n
 `--disable-features=WebRtcHideLocalIpsWithMdns` because Chrome hides local IPs from other
 browser instances on the same host. Real devices never hit that. **Section 6 in particular has
 no automated equivalent**, which is why the November rehearsal matters.
+
+---
+
+## Sending a diagnostic log
+
+When something does not work, a screenshot rarely says why. Every device keeps its own log.
+
+**Sync & Backup → Diagnostics**
+
+Each day is listed separately with how many entries it holds and how many were warnings or
+errors. Pick the day the problem happened and either:
+
+- **Save** — writes a file to Downloads named for the device and the date, e.g.
+  `kalyanam-log-SM-S911B-2026-09-13.txt`, so the right one is easy to find later.
+- **Share** — sends it straight into WhatsApp or email without saving it first.
+
+**Send the log from *both* devices.** Sync failures are two-sided, and the two logs carry a
+matching `room` tag so they can be lined up against each other.
+
+### What is in it
+
+The header describes the device — model, network type, whether it is installed as an app,
+screen size, storage used — followed by a timestamped list of what the app did.
+
+```
+Device       : SM-S911B
+Network      : 4g
+Installed app: no (browser tab)
+
+07:05:30.419 INFO  [sync] starting peer sync {"room":"9a3bd9","online":true}
+07:05:30.643 INFO  [sync] claimed a slot with the broker {"slot":0}
+07:05:55.101 ERROR [sync] broker did not respond {"timeoutMs":25000,"online":true}
+```
+
+### What is not in it
+
+**No guest names, phone numbers, messages, venue addresses or invite codes.** The log records
+what happened and how many records were involved, never what they say — anything that looks
+personal is replaced with `[redacted]` before it is written, not before it is sent. It is safe
+to pass on without reading it first, though you are welcome to.
+
+Logs stay on the device for seven days and are never transmitted anywhere on their own.
